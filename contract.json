@@ -1,0 +1,68 @@
+{
+  "_comment": "机器可读的「不可破坏契约」。verify.py 会逐项比对，任何一项不符就 FAIL 并给出定位。改动这里的值 = 主动改变对外承诺，必须同时评估对已交付客户的影响。",
+  "_how_to_use": "不要为了让 verify.py 变绿而改这个文件 —— 它记录的是事实基线，不是期望值。要么改代码去符合它，要么在确实需要变更契约时，改代码 + 改这里 + 写迁移 + 通知客户，三者同时做。",
+
+  "app": {
+    "name": "铜数据看板 · 订阅版",
+    "application_id": "wbapp_SzEJc2waV6zqr78qhIU3M1",
+    "live_url": "https://data-dashboard-85191.app.workbuddy.host",
+    "domain_prefix": "data-dashboard",
+    "deploy_dir": "dist",
+    "deploy_start_cmd": "python server.py"
+  },
+
+  "cloud": {
+    "endpoint": "https://data-dashboard-85191.app.workbuddy.host",
+    "publishableKey": "wbpk_SzEJc2waV6zqr78qhIU3M1_EsOOC55rzH5Grlz0kErY9VMacOE30GRa",
+    "rest_prefix": "/.cloud/database/rest",
+    "auth_prefix": "/.cloud/auth",
+    "storage_prefix": "/.cloud/storage",
+    "access_header": "x-wb-webapp-access-key"
+  },
+
+  "frozen_contracts": {
+
+    "_note_excel": "客户上传的 Excel 模板契约。改动 = 已交付客户的模板全部失效，属于破坏性变更。",
+    "excel_sheets": ["META", "SUMMARY", "KLINE", "TECH", "CONTRACTS", "ROLL", "RANK", "RANK_META",
+                     "WAREHOUSE", "INVENTORY", "OPTIONS_META", "OPTION_CHAIN", "OPT_STRATEGY", "EXTERNAL",
+                     "RATIOS", "TREND", "SENTIMENT", "SENTIMENT_WINDOWS", "SENTIMENT_EVENTS", "SEASON", "COST"],
+    "excel_required_sheets": ["META", "SUMMARY", "KLINE", "CONTRACTS"],
+    "kline_max_rows": 400,
+    "kline_header": ["日期", "开盘", "最高", "最低", "收盘", "成交量", "持仓量"],
+
+    "_note_db": "数据库结构契约。改表/改策略必须写成 migrations/ 下的增量文件，不要改 001_init.sql。",
+    "db_tables": ["access_grants", "datasets", "notifications", "operators"],
+    "db_policies": ["datasets_delete_own", "datasets_insert_own", "datasets_read_own", "datasets_update_own",
+                    "grants_insert_self_pending", "grants_operator_read", "grants_operator_update", "grants_read_own",
+                    "notifications_operator_write", "notifications_read", "operators_read_own"],
+    "db_identity_columns_are_text": ["access_grants.owner_id", "datasets.owner_id",
+                                     "notifications.created_by", "operators.owner_id"],
+    "grant_status_values": ["pending", "active", "suspended", "expired"],
+
+    "_note_identity": "客户端 insert 的字段集里绝不能出现身份列 —— 身份一律交给列默认值 auth.uid()。这曾导致线上事故（见 db/DB_SCHEMA.sql 变更历史）。",
+    "forbidden_insert_columns": ["created_by", "owner_id"],
+
+    "_note_limits": "前端硬编码的限额与键名。改键名会让老用户的已读/弹过记录全部丢失。",
+    "max_upload_bytes": 8388608,
+    "notif_body_max_chars": 4000,
+    "send_cooldown_ms": 60000,
+    "ls_keys": { "seen": "cu_notif_seen_at", "popped": "cu_notif_popped" },
+
+    "_note_server": "部署用静态服务器。它决定「坏链接兜底」与「不遮蔽 /.cloud 网关」两个线上行为，改动风险高。",
+    "server_py_sha256": "af5d9d914456ec7d74e3ba3769a958f009a996d317eb8209ae21e41f7992207c",
+    "server_py_bytes": 3627,
+    "server_must_block": ["/.cloud"],
+    "server_must_fallback_to_index": true
+  },
+
+  "advisory_baseline_hashes": {
+    "_note": "仅供参考的基线哈希（本包交付时刻）。verify.py 只报告差异、不因此判 FAIL —— 正常开发就会让它们变。用途是「确认 Codex 到底改了哪几个文件」。",
+    "build/theme.css": "e91b1142c5d889eca473d3b0f84f4ced26958dbf6291c3971d7552aa8abd873e",
+    "build/app.css": "1ac1ad71b5bc73325bc3830e5fa9391ede5c5610a65c1ed23694e54c032d65e7",
+    "build/render.js": "7cb82b47a56139cf3431506ba6b1c4f991c64c54e2e963b2b0fef513621b3607",
+    "build/parser.js": "22467ea869a6ff66f05c15e8315905a9bd26030e3015ecd96a26abd4106e8f49",
+    "build/exporter.js": "569d5501ed131be80e0ec3a4d1f77a2c713f822eeb91eafec635511fec8d6c33",
+    "build/app.js": "b73eab79c595cf696357b57398309ba93954c15a45d3f9a04bfe1e9e9bf2eb87",
+    "index.html": "40c19750e3d7a3344f8e7b2fbfdc632fc641f5e4d1f855e2e0ad0c051e266a0d"
+  }
+}
