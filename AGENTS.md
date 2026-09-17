@@ -33,3 +33,14 @@
 - 涉及认证、数据库、RLS、文件存储或部署配置时，在交付说明中单列风险和 WorkBuddy 侧需要执行的步骤。
 - 提交说明要包含修改内容、验证结果，以及是否触及 `contract.json` 或数据库迁移。
 - 不直接执行生产数据库迁移，不创建新的 WorkBuddy 应用，也不改变生产访问范围。
+
+## 通过 GitHub 交付（推荐）
+
+本仓库的源码回传走 GitHub 中转：Codex push → WorkBuddy 侧用 `github_sync.py` 非破坏性读回 → 跑 `verify.py` → 部署。
+
+- **推送前必须 `python verify.py` 退出码 0**。没验证的代码不要 push。
+- 提交说明请写清：改了什么、验证结果、是否触及 `contract.json` 或新增迁移。
+- 推送的分支名要与 WorkBuddy 侧 `github.json` 的 `ref` 一致（默认 `main`）。
+- WorkBuddy 侧的读取路径与已知坑见 **`docs/GITHUB_SYNC.md`**（含本机网络实测：GitHub 可达性**间歇性**，单次失败不代表配置错误）。
+- 不要把 `.env`、`_incoming/`、`_backup/` 提交上去（已在 `.gitignore` 中）。
+- 行尾由 `.gitattributes` 规范：`.bat` 用 CRLF，其余用 LF。不要绕过它改行尾，否则 diff 会全是噪声。

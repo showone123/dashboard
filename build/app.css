@@ -190,6 +190,28 @@ body.app-body{background:#070a12}
 .mt8{margin-top:8px} .mt14{margin-top:14px} .mt18{margin-top:18px}
 .row-flex{display:flex; gap:10px; align-items:center; flex-wrap:wrap}
 
+/* ---------- 实控人风险日志 ---------- */
+.risk-title-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.risk-title-row h3{margin:0 0 6px}
+.risk-drop{margin-top:16px;border:1px dashed var(--border2);border-radius:10px;padding:18px 20px;cursor:pointer;background:rgba(0,0,0,.2);display:flex;align-items:center;gap:15px;flex-wrap:wrap;transition:.15s}
+.risk-drop:hover,.risk-drop.over{border-color:var(--gold);background:rgba(240,185,11,.06)}
+.risk-drop .big{width:46px;height:46px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:rgba(240,185,11,.13);border:1px solid rgba(240,185,11,.35);color:var(--gold2);font-weight:800;font-size:12px;letter-spacing:1px}
+.risk-drop .hint{flex:1 1 340px}
+.risk-filters{display:grid;grid-template-columns:minmax(230px,1fr) minmax(230px,1fr) 190px auto auto;gap:10px;align-items:end}
+.risk-filters .field{margin:0}
+.risk-filters .btn{height:39px}
+.risk-summary{margin-top:14px}
+.risk-table{min-width:900px}
+.risk-mac{font-family:var(--mono);color:var(--gold2);letter-spacing:.4px}
+.risk-accounts{display:grid;gap:5px;min-width:390px}
+.risk-account{display:grid;grid-template-columns:minmax(90px,120px) minmax(120px,1fr) auto;gap:10px;align-items:center;padding:5px 8px;border-radius:6px;background:rgba(255,255,255,.025);border-left:2px solid transparent}
+.risk-account.match{background:rgba(240,185,11,.07);border-left-color:var(--gold)}
+.risk-account b{font-family:var(--mono);color:var(--text)}
+.risk-account span{color:var(--dim)}
+.risk-account em{font-style:normal;color:var(--dim2);font-size:10.5px;white-space:nowrap}
+@media(max-width:980px){.risk-filters{grid-template-columns:1fr 1fr}.risk-threshold{grid-column:auto}.risk-filters .btn{width:100%}}
+@media(max-width:620px){.risk-filters{grid-template-columns:1fr}.risk-account{grid-template-columns:1fr}.risk-account em{justify-self:start}}
+
 /* ==========================================================================
    成果导出（悬浮按钮 + 二级导出界面）
    ========================================================================== */

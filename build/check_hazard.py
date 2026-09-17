@@ -9,7 +9,7 @@ import os
 import re
 
 BUILD = os.path.dirname(os.path.abspath(__file__))
-FILES = ['theme.css', 'app.css', 'render.js', 'parser.js', 'exporter.js', 'app.js']
+FILES = ['theme.css', 'app.css', 'render.js', 'parser.js', 'risk_parser.js', 'exporter.js', 'app.js']
 
 BS = chr(92)  # 反斜杠
 

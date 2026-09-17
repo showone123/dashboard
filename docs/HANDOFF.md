@@ -8,13 +8,18 @@
 ## 1. 一句话流程
 
 ```
-Codex 改源码  →  Git 提交/PR  →  python verify.py  →  绿了就「覆盖上线」
-                                        │
-                                        └─ 红了 → 按提示修 → 重跑（不要直接部署）
+Codex 改源码 → push 到 GitHub → github_sync.py --pull/--diff/--apply → python verify.py → 绿了就「覆盖上线」
+                                          │                                    │
+                                          │                                    └─ 红了 → 按提示修 → 重跑（不要直接部署）
+                                          └─ 只写 _incoming/，不动本地工作区；--apply 前自动备份
 ```
 
 **唯一纪律：`verify.py` 必须绿。** 它在没有类型系统、没有 linter、没有 CI 的单文件项目里，
 是唯一能拦住"静默破坏对外契约"的关卡。
+
+> 代码怎么从 GitHub 取回来，见 **`docs/GITHUB_SYNC.md`**。
+> 要点：本机 GitHub 可达性**间歇性抖动**，别用 `git clone https://...`；
+> 用 `python github_sync.py --pull`（默认走 `api.github.com`，实测最稳）或 WorkBuddy 的 GitHub 连接器。
 
 ---
 
@@ -40,9 +45,11 @@ Codex 改源码  →  Git 提交/PR  →  python verify.py  →  绿了就「覆
 | `dist/server.py` | 决定坏链接兜底与 `/.cloud` 不被遮蔽两个线上行为。`verify.py` 用 sha256 强校验 |
 | `migrations/001_init.sql` | 已应用的初始迁移。改了会让"老环境"与"新环境"分叉。要改结构就**新增** `00N_*.sql` |
 | `build/parser.js` 的 `SHEETS` 列表 | **对客户的接口**。改动 = 已交付客户的 Excel 模板批量失效 |
+| `build/risk_parser.js` 的表头别名 | 实控人风险日志接口。必填含义是资金账号、客户姓名、登录 MAC 地址；可增加别名，但不要删除已支持名称 |
 | `db/DB_SCHEMA.sql` / `migrations/001_init.sql` 的策略清单 | 安全模型本身。改动需要同时评估提权风险 |
 | `contract.json` | 它不是"期望值"而是**事实基线**。为了让 verify 变绿而改它 = 掩耳盗铃 |
 | `dist/index.html` | 生成物。手改会在下次构建时被覆盖，白做 |
+| `github_sync.py` | 它就是"把代码取回来"的工具本身 —— 改它等于改回传通道。`verify.py` §8 会功能性校验它（包括 `safe.directory` 注入与 `ssh://` 地址），改坏了必红 |
 
 ### ⚠️ 改之前先想清楚的三处（改了会让 verify FAIL，需要走正式变更流程）
 
@@ -52,6 +59,7 @@ Codex 改源码  →  Git 提交/PR  →  python verify.py  →  绿了就「覆
 - `db_tables` / `db_policies` / `db_identity_columns_are_text`
 - `forbidden_insert_columns`（`created_by` / `owner_id`）
 - `max_upload_bytes` / `notif_body_max_chars` / `send_cooldown_ms` / `ls_keys`
+- 风险日志：`risk_log_required_headers` / `risk_log_account_prefix_length` / `risk_log_max_upload_bytes` / `risk_log_storage_prefix`
 - 云服务凭据（`endpoint` / `publishableKey`）
 
 ---
@@ -60,7 +68,15 @@ Codex 改源码  →  Git 提交/PR  →  python verify.py  →  绿了就「覆
 
 ### ① Codex 交付源码树
 
-通过 Git 提交或 PR 交付完整改动，避免 ZIP 和工作目录产生版本漂移。
+**推荐**：push 到 GitHub，避免 ZIP 和工作目录产生版本漂移。WorkBuddy 侧这样取回：
+
+```bash
+python github_sync.py --pull     # 只写 _incoming/，不动本地工作区
+python github_sync.py --diff     # 看差异（自动标出敏感文件）
+python github_sync.py --apply    # 确认后落地，被覆盖的文件先备份到 _backup/<时间戳>/
+```
+
+也可以直接给 ZIP —— 那就手工放回对应位置（见 ②）。
 
 **交付时请附带**：
 - 改了哪些文件（对照 `contract.json` 的 `advisory_baseline_hashes` 能一眼看出）；
@@ -70,7 +86,8 @@ Codex 改源码  →  Git 提交/PR  →  python verify.py  →  绿了就「覆
 
 ### ② 本地覆盖 + 跑门禁
 
-把源码放回仓库对应位置（`build/` 下的文件放回 `build/`，根目录的放回根目录），然后：
+如果走 ZIP：把源码放回仓库对应位置（`build/` 下的文件放回 `build/`，根目录的放回根目录）。
+如果走 GitHub：`--apply` 已经完成这一步（它会先备份）。然后：
 
 ```bash
 python verify.py

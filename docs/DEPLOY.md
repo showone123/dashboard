@@ -179,7 +179,7 @@ cp "outputs/发布归档_<说明>_<YYYYMMDD>.html" dist/index.html
 
 ## 6. 想用 GitHub 管代码？（可以，但部署仍在 WorkBuddy）
 
-GitHub 在这个项目里的**合理定位是版本管理与代码评审**，不是部署来源：
+GitHub 在这个项目里的**合理定位是代码中转与评审**，不是部署来源：
 
 ```
 Codex / 你                  GitHub                     本机                      WorkBuddy
@@ -187,16 +187,22 @@ Codex / 你                  GitHub                     本机                  
    ├─ 改 build/*.js ─────────>│ push                     │                          │
    │                          ├─ PR / review             │                          │
    │                          │                          │                          │
-   │                          │<───── git clone/pull ────┤                          │
-   │                          │                          ├─ python verify.py ───────┤
+   │                          │<── github_sync.py ───────┤                          │
+   │                          │    --pull（走 API）       ├─ python verify.py ───────┤
    │                          │                          └─ 「覆盖上线」──────────>│ 部署 dist/
 ```
 
+> ⚠️ **不要用 `git clone https://github.com/...`** 来取代码。本机实测这条通道最不稳定
+> （两轮探测分别为 1/3 和 0/3）。用 `python github_sync.py --pull`（默认走 `api.github.com`，
+> 实测 3/3 稳定），或直接装 WorkBuddy 的 GitHub 连接器。
+> 完整实测数据、三条通道对比、非破坏性读取流程与已知坑见 **`docs/GITHUB_SYNC.md`**。
+
 **唯一要守住的纪律**：`python verify.py` 必须是绿的。它替代了 CI ——
 在这个没有类型系统、没有 linter 的单文件项目里，它是唯一能自动拦住「静默破坏对外契约」的关卡。
+（它同时也会检查 `github_sync.py` 这条中转通道本身是否完好，见其第 8 节。）
 
 如果确实想要"推代码就自动部署"，在平台支持之前只能自己搭：
-比如在本地跑一个 watcher，检测到 `git pull` 有新提交就自动 `verify.py` + 触发部署。
+比如在本地跑一个 watcher，检测到 `--pull` 有新提交就自动 `verify.py` + 触发部署。
 但**部署动作本身仍然必须发生在 WorkBuddy 会话里**（因为沙箱与域名绑在 `appId` 上），
 所以自动化程度有限，收益不大。**优先做的是把 `verify.py` 跑顺，而不是搭流水线。**
 

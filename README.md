@@ -17,8 +17,34 @@
 | 构建和启动说明 | `docs/BUILD.md` | 也提供了一键脚本 `build.sh` / `build.bat` / `start.sh` / `start.bat` |
 | 前后端 API 地址 | `docs/API.md` | ⚠️ 先读开头：**本项目没有自建后端**，前端直连云服务 |
 | 重新部署步骤 | `docs/DEPLOY.md` | 含部署参数、验收清单、回滚 |
-| GitHub 自动部署 | ❌ **不支持** | 结论 + 理由 + 替代方案见 `docs/DEPLOY.md` §0 |
+| GitHub **自动部署** | ❌ **不支持** | WorkBuddy 云服务没有 Git 集成/CI 钩子。结论 + 理由见 `docs/DEPLOY.md` §0 |
+| GitHub **当代码交换站** | ✅ **支持** | 配套 `github_sync.py`；完整说明见 **`docs/GITHUB_SYNC.md`** ↓ |
 | **改完怎么稳定回来部署** | `docs/HANDOFF.md` + **`python verify.py`** | ← 这个才是最关键的，见下 |
+
+### 用 GitHub 中转：`github_sync.py`
+
+Codex 把源码推到 GitHub，WorkBuddy 侧用这个脚本读回来。**只用 Python 标准库，无第三方依赖。**
+
+```bash
+python github_sync.py --setup-guide    # 配置指引（三条通道怎么选）
+python github_sync.py --init o/r --ref main
+python github_sync.py --probe          # 通道体检（连测 3 轮，标出"抖动"）
+python github_sync.py --pull           # 拉远端 → _incoming/（本地一个字节不动）
+python github_sync.py --diff           # 看差异（自动标出敏感文件）
+python github_sync.py --apply          # 确认后落地（先自动备份）
+python verify.py                       # 门禁：绿了才部署
+```
+
+三个要点：
+
+1. **本机 GitHub 可达性是间歇性的** —— 实测同一个域名几分钟内能从 `0/3` 变 `3/3`。
+   **不要用 `git clone https://...`**（本机最差的一条路）。优先 WorkBuddy GitHub 连接器，其次 REST API，
+   再其次 SSH-over-443（`ssh.github.com:443`）。脚本内置指数退避重试。
+2. **`--pull` 不会改本地工作区**，只写 `_incoming/`；唯一写操作是 `--apply`，它需要交互确认并先备份到 `_backup/<时间戳>/`。
+3. **GitHub 是"中转站"，不是"发布按钮"**。推到 GitHub 不会触发部署；部署始终是 WorkBuddy 侧的一次显式操作
+   —— 中间隔着 `verify.py` 这道门禁，这比自动部署更安全。
+
+完整版（网络实测数据、分工表、已知坑、一页速查）见 **`docs/GITHUB_SYNC.md`**。
 
 ### 最关键的答案：`python verify.py`
 
@@ -26,7 +52,7 @@
 Codex 改完 → 源码回传 → 跑它 → **绿了才部署**。
 
 ```bash
-python verify.py      # 35 项检查；退出码 0 = 可以部署，1 = 不要部署
+python verify.py      # 43 项检查；退出码 0 = 可以部署，1 = 不要部署
 ```
 
 它按顺序做：环境检查 → 依赖校验（SHA-256）→ 重建 → 产物检查 → 3 个静态自检 →
@@ -44,6 +70,8 @@ python verify.py      # 35 项检查；退出码 0 = 可以部署，1 = 不要�
 ## 0. 一句话说明这是什么
 
 一个**零构建工具链**的单页应用：客户上传一份 Excel，前端在浏览器里解析、渲染成专业期货数据看板，并支持导出（单文件 HTML / PNG 长图）。带订阅制权限门禁、站内通知、运营后台。
+
+应用还包含一个独立的**期货账户实控人风险日志工作站**：上传含“资金帐号/资金账号、客户姓名、登录MAC地址”的 Excel 后，按 MAC 汇总关联账户，支持按资金账号前四位号段筛选、按 MAC/账号/姓名检索、导出结果，并在原有云存储中保留每次上传的历史版本。风险日志上限为 20 MB，铜看板数据原有 8 MB 上限不变。
 
 技术形态是刻意的选择，不是权宜之计：
 
@@ -67,7 +95,7 @@ python verify.py      # 35 项检查；退出码 0 = 可以部署，1 = 不要�
 # ① 一键：构建 + 全部校验（推荐，改完代码就跑这个）
 python verify.py
 #    → 退出码 0 = 可以部署；1 = 不要部署
-#    本包交付时：35 项通过 / 0 警告 / 0 失败
+#    本包交付时：43 项通过 / 0 警告 / 0 失败
 
 # ② 本地跑起来（verify.py 已同步 dist/index.html）
 python dist/server.py
@@ -107,14 +135,20 @@ copper-dashboard-src/
 │
 ├── ★ 交接文档区 ─────────────────────────────────────────────
 ├── README.md                    ← 本文件（总览 / 上手 / 架构 / 契约 / 技术债）
+├── AGENTS.md                    ★ 给 Codex 的协作规则（能改什么 / 不能改什么 / 交付要求）
 ├── docs/
 │   ├── HANDOFF.md               ★ 回传闭环：Codex 改完怎么稳定回到可部署状态
+│   ├── GITHUB_SYNC.md           ★ 用 GitHub 中转：网络实测 / 三条通道 / 非破坏性读取 / 已知坑
 │   ├── BUILD.md                 构建与启动说明 + 排错速查
 │   ├── API.md                   前后端 API 地址（含"本项目没有自建后端"的说明）
 │   └── DEPLOY.md                重新部署步骤 + 验收清单 + 回滚 + GitHub 结论
 │
+├── ★ 两平台协同 ─────────────────────────────────────────────
+├── github_sync.py               ★ GitHub 中转工具（--probe/--pull/--diff/--apply/--push）
+├── github.json.example          仓库配置示例（跑 --init 生成真正的 github.json）
+│
 ├── ★ 门禁与契约（本项目质量控制的核心）─────────────────────
-├── verify.py                    ★★ 一键回传门禁，35 项检查。绿了才能部署
+├── verify.py                    ★★ 一键回传门禁，43 项检查。绿了才能部署
 ├── contract.json                ★ 「不可破坏契约」基线，verify.py 逐项比对它
 ├── deps.lock.json               外部依赖锁定清单（固定版本、文件大小与 SHA-256）
 ├── vendor_deps.py               依赖校验 / 重下载 / 离线化工具
@@ -125,6 +159,7 @@ copper-dashboard-src/
 ├── .env.example                 可配项说明（⚠️ 里面都不是秘密，见文件头注释）
 ├── requirements.txt             构建工具链依赖（只有 openpyxl；运行时不需要）
 ├── .gitignore                   已配好：构建产物与截图不入库
+├── .gitattributes               行尾规范（.bat=CRLF，其余=LF），避免跨平台 diff 噪声
 │
 ├── ★ 源码 ──────────────────────────────────────────────────
 ├── build/                       ← 改代码都在这里
@@ -457,7 +492,7 @@ WHERE table_schema = 'public' AND column_name IN ('owner_id','created_by');
 ### 6.1 门禁（★ 改完代码第一件该跑的事）
 
 ```bash
-python verify.py            # 构建 + 全部 35 项检查，退出码 0 = 可以部署
+python verify.py            # 构建 + 全部 43 项检查，退出码 0 = 可以部署
 python verify.py --quick    # 跳过依赖相关项（离线环境用）
 ```
 
@@ -613,7 +648,7 @@ curl -s -o /dev/null -w "%{http_code}\n" https://.../.cloud/database/rest/notifi
 | 2026-09-16 | 通知模块上线（铃铛浮窗 + 运营台发布 + 进首页自动弹出）+ 验证码 60 秒冷却 |
 | 2026-09-16 | 修复 `notifications.created_by` 类型错误（`uuid` → `text`），详见 `db/DB_SCHEMA.sql` |
 | 2026-09-17 | 源码交接包：`vendor/` 依赖锁定、`docs/` 四份文档、`migrations/`、`.env.example`、`requirements.txt`、一键脚本 |
-| 2026-09-17 | 新增 `verify.py` 回传门禁 + `contract.json` 契约基线（35 项检查，已通过负向测试） |
+| 2026-09-17 | 新增 `verify.py` 回传门禁 + `contract.json` 契约基线（现为 43 项检查，已通过负向测试） |
 | 2026-09-17 | `build/probe_scripts.py` 的 Node 路径改为可移植解析（`$NODE_BIN` → 本机路径 → `PATH`） |
 
 ### 8.4 本次交接（2026-09-17）新增的东西
@@ -627,6 +662,9 @@ curl -s -o /dev/null -w "%{http_code}\n" https://.../.cloud/database/rest/notifi
 | `docs/API.md` | API 地址与调用面（含"本项目没有自建后端"这个容易误解的点） |
 | `docs/BUILD.md` | 构建/启动/测试/排错 |
 | `docs/DEPLOY.md` | 部署参数、验收清单、回滚、**GitHub 自动部署不支持的结论** |
+| `github_sync.py` + `docs/GITHUB_SYNC.md` | **两平台协同**：用 GitHub 当代码中转站，WorkBuddy 侧非破坏性读回。含本机网络实测（可达性间歇性）、三条通道、分工表、已知坑 |
+| `AGENTS.md` | 给 Codex 的协作规则（能改什么/不能改什么、必须保持的部署契约） |
+| `.gitattributes` | 行尾规范（`.bat` 用 CRLF，代码/文档用 LF），避免跨平台 diff 噪声 |
 | `migrations/` | 数据库从"一个文档"升级为"可执行的初始迁移 + 增量迁移机制" |
 | `.env.example` | 集中说明可配项（并澄清本项目没有服务端密钥） |
 | `requirements.txt` / `deps.lock.json` / `vendor/` | 依赖清单 + 版本锁定 + SHA-256 校验 + 离线副本 |
@@ -663,6 +701,8 @@ curl -s -o /dev/null -w "%{http_code}\n" https://.../.cloud/database/rest/notifi
 |---|---|
 | **`docs/HANDOFF.md`** | ★ 改完代码准备交回来时。回传流程、能改/不能改的边界、`verify.py` FAIL 怎么处理、契约变更的正式流程 |
 | **`docs/DEPLOY.md`** | 要上线时。部署参数、三条硬规则、验收清单、回滚、GitHub 结论 |
+| **`docs/GITHUB_SYNC.md`** | ★ 决定"用 GitHub 中转代码"时。网络实测、三条通道、非破坏性读取流程、分工表、已知坑 |
+| **`AGENTS.md`** | Codex 侧开工前。能改什么/不能改什么、必须保持的部署契约、交付要求 |
 | **`docs/BUILD.md`** | 第一次上手、环境报错、想跑端到端测试时 |
 | **`docs/API.md`** | 要碰登录/数据库/存储时。含平台账号模型的硬约束与错误码对照 |
 | **`db/DB_SCHEMA.sql`** | 要动数据库时。表结构 + 11 条 RLS 策略全文 + 变更历史 |

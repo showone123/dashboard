@@ -161,6 +161,8 @@ cloud.auth.verifyOtp
 |---|---|---|---|
 | `access_grants` | INSERT | `status, plan, email, note` | **不含 `owner_id`** —— 交给列默认值 `auth.uid()`。RLS 的 `WITH CHECK` 强制 `status='pending' AND plan<>'operator' AND expires_at IS NULL` |
 | `datasets` | INSERT | `name, storage_path, size_bytes, mime_type, data_date, sheet_count` | **不含 `owner_id`** |
+
+风险日志复用 `datasets` 元数据表和用户专属对象存储，不新增数据库表。通过存储路径区分用途：铜看板文件使用 `datasets/`，实控人风险日志使用 `risk-logs/`。每次上传创建一个新对象和一条新元数据记录；列表中最新一条作为当前版本，旧版本仍可载入和下载。
 | `notifications` | INSERT | `title, body, level, published, updated_at` | **不含 `created_by`** —— 曾经传了它，而列是 uuid 类型，导致线上 `22P02 invalid input syntax for type uuid` |
 
 > **规则：客户端 insert 字段集里绝不能出现身份列。** 身份一律由列默认值 `auth.uid()` 生成。

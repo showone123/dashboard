@@ -11,7 +11,8 @@
     publishableKey: 'wbpk_SzEJc2waV6zqr78qhIU3M1_EsOOC55rzH5Grlz0kErY9VMacOE30GRa'
   };
 
-  var MAX_UPLOAD = 8 * 1024 * 1024; // 8MB
+  var MAX_UPLOAD = 8 * 1024 * 1024; // 铜看板数据 8MB
+  var RISK_MAX_UPLOAD = 20 * 1024 * 1024; // 风险日志行数较多，独立上限 20MB
 
   var cloud = WorkBuddyCloud.createWorkBuddyCloud({
     endpoint: PUBLIC_CONFIG.endpoint,
@@ -21,7 +22,8 @@
   /* ---------- 状态 ---------- */
   var S = {
     userId: null, userEmail: '', grant: null, isOperator: false,
-    data: null, dataSource: '示例数据（铜）', datasets: [], pending: null, mounted: false
+    data: null, dataSource: '示例数据（铜）', datasets: [], pending: null, mounted: false,
+    riskData: null, riskSource: '', riskFiltered: []
   };
 
   /* ---------- 工具 ---------- */
@@ -584,7 +586,7 @@
     closeNotifs();
     var was = curTab;
     curTab = name;
-    ['dash', 'upload', 'history', 'admin'].forEach(function (t) {
+    ['dash', 'upload', 'history', 'risk', 'admin'].forEach(function (t) {
       var p = $('panel' + t.charAt(0).toUpperCase() + t.slice(1));
       if (p) p.classList.toggle('active', t === name);
     });
@@ -605,6 +607,11 @@
       if (autoPop.timer) { clearTimeout(autoPop.timer); autoPop.timer = null; }
     }
     if (name === 'history') loadDatasets();
+    if (name === 'risk') loadDatasets().then(function () {
+      if (S.riskData) return;
+      var latest = (S.datasets || []).filter(isRiskDataset)[0];
+      if (latest) loadRiskDataset(latest.id, true);
+    });
     if (name === 'admin') loadOperator();
   }
 
@@ -699,13 +706,14 @@
       if (r.error) throw r.error;
       S.datasets = r.data || [];
       renderHistory();
+      renderRiskHistory();
     } catch (e) {
       $('histBody').innerHTML = '<tr><td colspan="6"><div class="empty-state">读取失败：' + esc(e && e.message ? e.message : String(e)) + '</div></td></tr>';
     }
   }
 
   function renderHistory() {
-    var list = S.datasets || [];
+    var list = (S.datasets || []).filter(function (d) { return !isRiskDataset(d); });
     $('histCount').textContent = list.length ? '共 ' + list.length + ' 份' : '';
     $('btnDownAll').disabled = !list.length;
     if (!list.length) {
@@ -732,6 +740,10 @@
   }
 
   function findDs(id) { return (S.datasets || []).filter(function (d) { return String(d.id) === String(id); })[0]; }
+
+  function isRiskDataset(d) {
+    return !!(d && String(d.storage_path || '').replace(/\\/g, '/').indexOf('risk-logs/') >= 0);
+  }
 
   async function loadDataset(id) {
     var d = findDs(id); if (!d) return;
@@ -764,7 +776,7 @@
   }
 
   async function downloadAll() {
-    var list = S.datasets || [];
+    var list = (S.datasets || []).filter(function (d) { return !isRiskDataset(d); });
     if (!list.length) return;
     busy(true, '正在打包下载 ' + list.length + ' 份历史数据…');
     var blobs = [], names = [], ok = 0, fail = 0;
@@ -813,6 +825,179 @@
     }
     busy(false);
     toast(fail ? 'warn' : 'ok', '历史数据下载完成：成功 ' + ok + ' 份' + (fail ? '，失败 ' + fail + ' 份' : ''));
+  }
+
+  /* ==================== 期货账户实控人风险日志 ==================== */
+  var riskPending = null;
+
+  async function onRiskFile(file) {
+    if (!file) return;
+    var nm = file.name.toLowerCase();
+    if (!/\.(xlsx|xls|csv)$/.test(nm)) return toast('err', '风险日志只支持 .xlsx / .xls / .csv 文件');
+    if (file.size > RISK_MAX_UPLOAD) return toast('err', '文件超过 ' + fmtSize(RISK_MAX_UPLOAD) + ' 限制');
+    busy(true, '正在解析风险日志，数据量较大时请稍候…');
+    try {
+      var buf = await file.arrayBuffer();
+      var wb = XLSX.read(buf, { type: 'array', cellDates: false });
+      var built = RiskLogParser.build(wb, file.name);
+      riskPending = { file: file, built: built };
+      S.riskData = built; S.riskSource = file.name;
+      renderRiskPreview(file, built);
+      applyRiskFilter();
+    } catch (e) {
+      riskPending = null;
+      $('riskPreview').classList.remove('show');
+      toast('err', '风险日志解析失败：' + (e && e.message ? e.message : String(e)), 8000);
+    } finally { busy(false); }
+  }
+
+  function renderRiskPreview(file, d) {
+    var cells = [
+      ['文件名', file.name], ['文件大小', fmtSize(file.size)], ['数据表', d.sheetName],
+      ['有效记录', Number(d.validRows).toLocaleString()], ['MAC 数', Number(d.uniqueMacs).toLocaleString()],
+      ['资金账号', Number(d.uniqueAccounts).toLocaleString()]
+    ];
+    $('riskPreviewGrid').innerHTML = cells.map(function (x) {
+      return '<div class="kv-cell"><div class="k">' + esc(x[0]) + '</div><div class="v">' + esc(x[1]) + '</div></div>';
+    }).join('');
+    $('riskPreviewMsg').textContent = '已识别第 ' + d.headerRow + ' 行表头：资金账号、客户姓名、登录 MAC 地址。' +
+      (d.skippedRows ? ' 跳过 ' + d.skippedRows + ' 行缺少账号或 MAC 的记录。' : ' 所有数据行均可用于筛选。');
+    $('riskPreview').classList.add('show');
+  }
+
+  async function uploadRiskLog() {
+    if (!riskPending) return;
+    var file = riskPending.file, built = riskPending.built;
+    busy(true, '正在保存风险日志版本…');
+    try {
+      var safe = file.name.replace(/[^\w.\-\u4e00-\u9fa5]/g, '_');
+      var path = cloud.storage.userPath(S.userId, 'risk-logs/' + Date.now() + '_' + safe);
+      var up = await cloud.storage.upload(path, file, {
+        contentType: file.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', upsert: false
+      });
+      if (up.error) throw up.error;
+      var ins = await cloud.database.from('datasets').insert({
+        name: file.name, storage_path: path, size_bytes: file.size, mime_type: file.type || '',
+        data_date: (built.lastEvent || built.firstEvent || '').slice(0, 20), sheet_count: built.sheets.length
+      }).select();
+      if (ins.error) throw ins.error;
+      S.riskData = built; S.riskSource = file.name;
+      riskPending = null; $('riskPreview').classList.remove('show'); $('riskFileInput').value = '';
+      renderRiskCurrentMeta(); applyRiskFilter(); await loadDatasets();
+      toast('ok', '风险日志已保存为当前版本，旧版本仍保留在历史记录中', 5500);
+    } catch (e) {
+      toast('err', '风险日志保存失败：' + (e && e.message ? e.message : String(e)), 8000);
+    } finally { busy(false); }
+  }
+
+  function renderRiskCurrentMeta() {
+    var d = S.riskData;
+    if (!d) {
+      $('riskCurrentTitle').textContent = '筛选结果';
+      $('riskCurrentMeta').textContent = '请先上传或载入一份风险日志。';
+      return;
+    }
+    $('riskCurrentTitle').textContent = '筛选结果 · ' + (S.riskSource || d.fileName || '风险日志');
+    $('riskCurrentMeta').textContent = '数据表：' + d.sheetName + ' · 有效记录 ' + Number(d.validRows).toLocaleString() +
+      ' 条 · 时间范围 ' + (d.firstEvent || '—') + ' 至 ' + (d.lastEvent || '—');
+  }
+
+  function riskOptions() {
+    return { prefixes: $('riskPrefixes').value, query: $('riskQuery').value, minAccounts: $('riskMinAccounts').value };
+  }
+
+  function applyRiskFilter() {
+    renderRiskCurrentMeta();
+    if (!S.riskData) {
+      S.riskFiltered = []; $('btnRiskExport').disabled = true;
+      $('riskSummary').innerHTML = '';
+      $('riskBody').innerHTML = '<tr><td colspan="5"><div class="empty-state">请先上传或从历史版本载入风险日志。</div></td></tr>';
+      return;
+    }
+    var opts = riskOptions();
+    var prefixes = RiskLogParser.parsePrefixes(opts.prefixes);
+    var bad = prefixes.filter(function (p) { return !/^\d{4}$/.test(p); });
+    if (bad.length) return toast('err', '号段必须是资金账号前四位，例如 3501。请检查：' + bad.join('、'));
+    var rows = RiskLogParser.filter(S.riskData, opts);
+    S.riskFiltered = rows;
+    $('btnRiskExport').disabled = !rows.length;
+    var matchedAccounts = {}, events = 0;
+    rows.forEach(function (g) { events += g.totalEvents; g.accounts.forEach(function (a) { matchedAccounts[a.account] = true; }); });
+    var summary = [
+      ['异常 MAC', rows.length.toLocaleString()],
+      ['关联资金账号', Object.keys(matchedAccounts).length.toLocaleString()],
+      ['登录记录', events.toLocaleString()],
+      ['筛选号段', prefixes.length ? prefixes.join('、') : '全部']
+    ];
+    $('riskSummary').innerHTML = summary.map(function (x) {
+      return '<div class="kv-cell"><div class="k">' + esc(x[0]) + '</div><div class="v">' + esc(x[1]) + '</div></div>';
+    }).join('');
+    if (!rows.length) {
+      $('riskBody').innerHTML = '<tr><td colspan="5"><div class="empty-state">没有符合当前号段和异常门槛的记录。</div></td></tr>';
+      return;
+    }
+    $('riskBody').innerHTML = rows.map(function (g) {
+      var accountHtml = g.accounts.map(function (a) {
+        var hit = !prefixes.length || prefixes.some(function (p) { return a.account.indexOf(p) === 0; });
+        var names = a.customers.length ? a.customers.join(' / ') : '姓名缺失';
+        return '<div class="risk-account ' + (hit ? 'match' : '') + '"><b>' + esc(a.account) + '</b><span>' + esc(names) + '</span><em>' + a.count.toLocaleString() + ' 次</em></div>';
+      }).join('');
+      return '<tr><td class="l nowrap"><b class="risk-mac">' + esc(g.mac) + '</b></td>' +
+        '<td class="l"><div class="risk-accounts">' + accountHtml + '</div></td>' +
+        '<td class="num"><b>' + g.accountCount + '</b></td><td class="num">' + g.totalEvents.toLocaleString() + '</td>' +
+        '<td class="l mono-small nowrap">' + esc(g.lastEvent || '—') + '</td></tr>';
+    }).join('');
+  }
+
+  function renderRiskHistory() {
+    var list = (S.datasets || []).filter(isRiskDataset);
+    $('riskHistCount').textContent = list.length ? '共 ' + list.length + ' 个版本' : '';
+    if (!list.length) {
+      $('riskHistBody').innerHTML = '<tr><td colspan="4"><div class="empty-state">还没有保存过风险日志。</div></td></tr>';
+      return;
+    }
+    $('riskHistBody').innerHTML = list.map(function (d, i) {
+      return '<tr><td class="l">' + (i === 0 ? '<span class="chip good">当前</span> ' : '') + esc(d.name) + '</td>' +
+        '<td class="num">' + fmtSize(d.size_bytes) + '</td><td class="l mono-small">' + esc(fmtTime(d.created_at)) + '</td>' +
+        '<td class="l"><div class="ops"><button class="btn sm ok" data-risk-load="' + d.id + '">载入筛选</button>' +
+        '<button class="btn sm" data-risk-dl="' + d.id + '">下载原文件</button></div></td></tr>';
+    }).join('');
+    $('riskHistBody').querySelectorAll('[data-risk-load]').forEach(function (b) {
+      b.addEventListener('click', function () { loadRiskDataset(b.getAttribute('data-risk-load')); });
+    });
+    $('riskHistBody').querySelectorAll('[data-risk-dl]').forEach(function (b) {
+      b.addEventListener('click', function () { downloadDataset(b.getAttribute('data-risk-dl')); });
+    });
+  }
+
+  async function loadRiskDataset(id, quiet) {
+    var d = findDs(id); if (!d || !isRiskDataset(d)) return;
+    busy(true, '正在载入历史风险日志…');
+    try {
+      var r = await cloud.storage.download(d.storage_path); if (r.error) throw r.error;
+      var wb = XLSX.read(await r.data.arrayBuffer(), { type: 'array', cellDates: false });
+      S.riskData = RiskLogParser.build(wb, d.name); S.riskSource = d.name;
+      renderRiskCurrentMeta(); applyRiskFilter();
+      if (!quiet) {
+        $('riskResultsSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        toast('ok', '已载入历史版本「' + d.name + '」');
+      }
+    } catch (e) { toast('err', '历史风险日志载入失败：' + (e && e.message ? e.message : String(e)), 8000); }
+    finally { busy(false); }
+  }
+
+  function exportRiskResults() {
+    var rows = S.riskFiltered || [];
+    if (!rows.length) return;
+    var csv = [['MAC地址', '资金账号', '客户姓名', '该账号登录次数', 'MAC关联账号数', 'MAC登录记录数', '首次事件', '最近事件']];
+    rows.forEach(function (g) { g.accounts.forEach(function (a) {
+      csv.push([g.mac, a.account, a.customers.join(' / '), a.count, g.accountCount, g.totalEvents, a.firstEvent || g.firstEvent, a.lastEvent || g.lastEvent]);
+    }); });
+    var quote = function (v) { return '"' + String(v === null || v === undefined ? '' : v).replace(/"/g, '""') + '"'; };
+    var body = '\ufeff' + csv.map(function (r) { return r.map(quote).join(','); }).join('\r\n');
+    var stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    saveBlob(new Blob([body], { type: 'text/csv;charset=utf-8' }), '实控人风险筛选结果_' + stamp + '.csv');
+    toast('ok', '筛选结果已导出，共 ' + rows.length + ' 个 MAC');
   }
 
   async function deleteDataset(id) {
@@ -1464,6 +1649,36 @@
     });
     $('btnSample').addEventListener('click', useSample);
     $('btnDownAll').addEventListener('click', downloadAll);
+
+    /* ---------- 实控人风险日志 ---------- */
+    var riskDrop = $('riskDrop');
+    function pickRiskFile() { $('riskFileInput').click(); }
+    $('btnRiskPick').addEventListener('click', pickRiskFile);
+    riskDrop.addEventListener('click', pickRiskFile);
+    $('riskFileInput').addEventListener('change', function (e) { onRiskFile(e.target.files[0]); });
+    ['dragenter', 'dragover'].forEach(function (ev) {
+      riskDrop.addEventListener(ev, function (e) { e.preventDefault(); riskDrop.classList.add('over'); });
+    });
+    ['dragleave', 'drop'].forEach(function (ev) {
+      riskDrop.addEventListener(ev, function (e) { e.preventDefault(); riskDrop.classList.remove('over'); });
+    });
+    riskDrop.addEventListener('drop', function (e) {
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) onRiskFile(e.dataTransfer.files[0]);
+    });
+    $('btnRiskUpload').addEventListener('click', uploadRiskLog);
+    $('btnRiskCancel').addEventListener('click', function () {
+      riskPending = null; $('riskPreview').classList.remove('show'); $('riskFileInput').value = '';
+      toast('ok', '已取消本次风险日志上传');
+    });
+    $('btnRiskFilter').addEventListener('click', applyRiskFilter);
+    $('btnRiskClear').addEventListener('click', function () {
+      $('riskPrefixes').value = ''; $('riskQuery').value = ''; $('riskMinAccounts').value = '2'; applyRiskFilter();
+    });
+    $('riskPrefixes').addEventListener('keydown', function (e) { if (e.key === 'Enter') applyRiskFilter(); });
+    $('riskQuery').addEventListener('keydown', function (e) { if (e.key === 'Enter') applyRiskFilter(); });
+    $('riskMinAccounts').addEventListener('change', applyRiskFilter);
+    $('btnRiskExport').addEventListener('click', exportRiskResults);
+    $('btnRiskRefresh').addEventListener('click', function () { loadDatasets().then(function () { toast('ok', '风险日志历史已刷新'); }); });
 
     /* ---------- 成果导出 ---------- */
     $('btnExport').addEventListener('click', openExport);

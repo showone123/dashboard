@@ -15,6 +15,7 @@ theme = rd("theme.css")
 appcss = rd("app.css")
 render = rd("render.js")
 parser = rd("parser.js")
+risk_parser = rd("risk_parser.js")
 exporter = rd("exporter.js")
 appjs = rd("app.js")
 seed_raw = rd("copper_data.json")
@@ -89,6 +90,7 @@ __APPCSS__
       <button class="app-tab active" data-tab="dash" type="button">数据看板</button>
       <button class="app-tab" data-tab="upload" type="button">上传数据</button>
       <button class="app-tab" data-tab="history" type="button">历史数据</button>
+      <button class="app-tab" data-tab="risk" type="button">实控人风险日志</button>
       <button class="app-tab hidden" data-tab="admin" id="tabAdmin" type="button">运营台<span class="dotbadge hidden" id="adminBadge">0</span></button>
     </nav>
     <div class="me">
@@ -176,6 +178,82 @@ __APPCSS__
             <tbody id="histBody"></tbody>
           </table>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 实控人风险日志 -->
+  <section class="panel" id="panelRisk">
+    <div class="panel-pad risk-workbench">
+      <div class="section">
+        <div class="risk-title-row">
+          <div>
+            <h3>期货账户实控人风险日志</h3>
+            <div class="hint">上传风险日志后，系统按 MAC 汇总资金账号和客户姓名。最新上传自动成为当前版本，历史版本继续保留。</div>
+          </div>
+          <div class="row-flex">
+            <button class="btn sm" id="btnRiskRefresh" type="button">刷新历史</button>
+            <button class="btn sm" id="btnRiskPick" type="button">选择 Excel</button>
+          </div>
+        </div>
+        <input type="file" id="riskFileInput" accept=".xlsx,.xls,.csv" class="hidden"/>
+        <div class="risk-drop" id="riskDrop">
+          <div class="big">MAC</div>
+          <div><b>点击或拖入风险日志</b></div>
+          <div class="hint">支持 .xlsx / .xls / .csv，单文件不超过 20 MB。文件先在浏览器本地解析，确认后才上传。</div>
+        </div>
+        <div class="preview" id="riskPreview">
+          <div class="kv-grid" id="riskPreviewGrid"></div>
+          <div class="msg show info mt14" id="riskPreviewMsg" style="display:block"></div>
+          <div class="actions">
+            <button class="btn primary" id="btnRiskUpload" type="button">保存为当前版本</button>
+            <button class="btn" id="btnRiskCancel" type="button">取消</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="section" id="riskResultsSection">
+        <div class="risk-title-row">
+          <div>
+            <h3 id="riskCurrentTitle">筛选结果</h3>
+            <div class="hint" id="riskCurrentMeta">请先上传或载入一份风险日志。</div>
+          </div>
+          <button class="btn sm" id="btnRiskExport" type="button" disabled>导出筛选结果</button>
+        </div>
+        <div class="risk-filters mt14">
+          <div class="field">
+            <label>资金账号号段（前四位，可输入多个）</label>
+            <input id="riskPrefixes" type="text" inputmode="numeric" placeholder="例如：3501 3502，留空表示全部"/>
+          </div>
+          <div class="field">
+            <label>MAC / 资金账号 / 客户姓名</label>
+            <input id="riskQuery" type="text" placeholder="输入关键字快速查找"/>
+          </div>
+          <div class="field risk-threshold">
+            <label>异常门槛</label>
+            <select id="riskMinAccounts">
+              <option value="2">2 个及以上账号</option>
+              <option value="3">3 个及以上账号</option>
+              <option value="4">4 个及以上账号</option>
+            </select>
+          </div>
+          <button class="btn primary" id="btnRiskFilter" type="button">筛选</button>
+          <button class="btn" id="btnRiskClear" type="button">清空</button>
+        </div>
+        <div class="kv-grid risk-summary" id="riskSummary"></div>
+        <div class="tbl-wrap mt14">
+          <table class="tbl risk-table">
+            <thead><tr><th class="l">MAC 地址</th><th class="l">关联资金账号与客户</th><th>账号数</th><th>登录记录</th><th class="l">最近事件</th></tr></thead>
+            <tbody id="riskBody"><tr><td colspan="5"><div class="empty-state">暂无数据</div></td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="risk-title-row">
+          <div><h3>历史版本 <span class="mono-small" id="riskHistCount"></span></h3><div class="hint">载入任一旧版本即可按相同条件重新筛选。</div></div>
+        </div>
+        <div class="tbl-wrap mt14"><table class="tbl"><thead><tr><th class="l">文件名</th><th>大小</th><th class="l">上传时间</th><th class="l">操作</th></tr></thead><tbody id="riskHistBody"></tbody></table></div>
       </div>
     </div>
   </section>
@@ -355,6 +433,9 @@ __RENDER__
 <script>
 __PARSER__
 </script>
+<script id="wbRiskParserJs">
+__RISK_PARSER__
+</script>
 <script id="wbExporterJs">
 __EXPORTER__
 </script>
@@ -373,6 +454,7 @@ out = (TPL.replace("__THEME__", theme)
           .replace("__APPCSS__", appcss)
           .replace("__RENDER__", render)
           .replace("__PARSER__", parser)
+          .replace("__RISK_PARSER__", risk_parser)
           .replace("__EXPORTER__", exporter)
           .replace("__SEED__", seed_raw)
           .replace("__APPJS__", appjs))

@@ -30,6 +30,12 @@
     "kline_max_rows": 400,
     "kline_header": ["日期", "开盘", "最高", "最低", "收盘", "成交量", "持仓量"],
 
+    "_note_risk_log": "实控人风险日志是独立 Excel 契约，不改变铜看板 21 张 sheet 的既有契约。解析器自动定位含三项必填表头的数据表。",
+    "risk_log_required_headers": ["资金帐号|资金账号", "客户姓名", "登录MAC地址"],
+    "risk_log_account_prefix_length": 4,
+    "risk_log_max_upload_bytes": 20971520,
+    "risk_log_storage_prefix": "risk-logs/",
+
     "_note_db": "数据库结构契约。改表/改策略必须写成 migrations/ 下的增量文件，不要改 001_init.sql。",
     "db_tables": ["access_grants", "datasets", "notifications", "operators"],
     "db_policies": ["datasets_delete_own", "datasets_insert_own", "datasets_read_own", "datasets_update_own",

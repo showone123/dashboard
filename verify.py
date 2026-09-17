@@ -334,6 +334,20 @@ def check_contract():
             bad("KLINE 表头字段缺失：%s" % "、".join(miss),
                 "客户 Excel 的 KLINE sheet 会解析不出数据")
 
+    risk_parser = rd("build", "risk_parser.js")
+    if risk_parser is None:
+        bad("缺少 build/risk_parser.js")
+    else:
+        missing = []
+        for group in fc.get("risk_log_required_headers", []):
+            alternatives = group.split("|")
+            if not any(h in risk_parser for h in alternatives):
+                missing.append(group)
+        if missing:
+            bad("风险日志必填表头契约缺失：%s" % "、".join(missing))
+        else:
+            ok("风险日志必填表头契约一致")
+
     # ---- 6.2 身份列禁令（线上事故回归哨兵）----
     appjs = rd("build", "app.js")
     if appjs is None:
@@ -363,6 +377,20 @@ def check_contract():
             ok("上传上限一致（%d 字节）" % v)
         else:
             bad("上传上限被改动", "契约 %s，源码 %s" % (fc["max_upload_bytes"], v))
+
+        m = re.search(r"var\s+RISK_MAX_UPLOAD\s*=\s*([^;]+);", appjs)
+        v = eval_int_expr(m.group(1)) if m else None
+        if v == fc.get("risk_log_max_upload_bytes"):
+            ok("风险日志上传上限一致（%d 字节）" % v)
+        else:
+            bad("风险日志上传上限与契约不一致",
+                "契约 %s，源码 %s" % (fc.get("risk_log_max_upload_bytes"), v))
+
+        prefix = fc.get("risk_log_storage_prefix", "")
+        if prefix and prefix in appjs:
+            ok("风险日志存储目录一致（%s）" % prefix)
+        else:
+            bad("风险日志存储目录与契约不一致", "契约 %s" % prefix)
 
         m = re.search(r"var\s+SEND_COOLDOWN_MS\s*=\s*(\d+)", appjs)
         v = int(m.group(1)) if m else None
@@ -467,6 +495,106 @@ def check_dist_sync():
             "重新运行 python verify.py；build/make_app.py 应同时生成两份产物。")
 
 
+def _load_sync_module():
+    """把 github_sync.py 作为模块载入，用于**功能性**校验（而非字符串匹配）。
+
+    字符串匹配挡不住"看起来还在、其实已经坏了"的改动 —— 第一次写这节检查时
+    就被自己绕过了：把 `GIT_CONFIG_KEY_%d` 改成 `GIT_CONFIG_KEY_DISABLED_%d`，
+    子串断言照样通过，但运行时 git 会拿不到 safe.directory 而全面失败。
+    所以这里直接 import 并调用真函数，断言它的**返回值**。
+    """
+    import importlib.util
+    path = os.path.join(HERE, "github_sync.py")
+    spec = importlib.util.spec_from_file_location("_wb_github_sync", path)
+    mod = importlib.util.module_from_spec(spec)
+    # 导入会顺带写出 __pycache__/github_sync.*.pyc —— 门禁不该有副作用，临时关掉。
+    old = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        sys.dont_write_bytecode = old
+    return mod
+
+
+def check_sync_channel():
+    """校验两平台协同通道（GitHub 中转）本身没被改坏。
+
+    为什么把它放进门禁：`github_sync.py` 是 Codex → WorkBuddy 的**唯一回传路径**。
+    它一旦被删掉、写坏，或"优化"回已知不可靠的做法，回传就断了；而这种断法
+    在业务代码上是看不出来的（verify 前七节全绿也照样断）。所以这里守三条不变量：
+      ① 工具与文档存在，且脚本仍能被 Python 解析；
+      ② `git_env_extra()` 真的注入了 safe.directory（否则本机 git 全命令失败）；
+      ③ `git_remote_url()` 走 ssh://，不退化到 https（本机实测最不稳定的一条路）。
+    ②③ 是调用真函数的**功能**断言，不是文本搜索 —— 改坏了就一定会红。
+    """
+    sec("8. 协同通道检查（GitHub 中转）")
+
+    tool = os.path.join(HERE, "github_sync.py")
+    if not os.path.isfile(tool):
+        bad("github_sync.py 不存在 —— Codex 改完的源码没有回传通道了")
+    else:
+        try:
+            compile(io.open(tool, encoding="utf-8").read(), "github_sync.py", "exec")
+            ok("github_sync.py 存在且语法有效")
+        except SyntaxError as e:
+            bad("github_sync.py 语法错误（第 %s 行）：%s" % (e.lineno, e.msg),
+                "回传工具坏了就跑不了 --pull/--diff/--apply，先修好再交付。")
+
+    mod = None
+    if os.path.isfile(tool):
+        try:
+            mod = _load_sync_module()
+        except Exception as e:
+            bad("github_sync.py 无法作为模块载入：%s" % e)
+
+    if mod is not None:
+        # ② safe.directory 必须真的注入（功能断言）
+        try:
+            env = mod.git_env_extra()
+            n = int(env.get("GIT_CONFIG_COUNT") or 0)
+            keys = [env.get("GIT_CONFIG_KEY_%d" % i) for i in range(n)]
+            vals = [env.get("GIT_CONFIG_VALUE_%d" % i) for i in range(n)]
+            if "safe.directory" in keys and any(v for v in vals):
+                ok("git_env_extra() 真的注入 safe.directory（防 .git 属主不符导致 git 全失败）")
+            else:
+                bad("git_env_extra() 没有注入 safe.directory（keys=%s）" % keys,
+                    "本机 .git 属主与当前用户不一致，缺了这条 git 会全命令失败、并连带打断 API 推送。")
+        except Exception as e:
+            bad("git_env_extra() 调用失败：%s" % e)
+
+        # ③ 克隆必须走 ssh://（功能断言）
+        try:
+            url = mod.git_remote_url({"repo": "owner/repo"})
+            if url.startswith("ssh://"):
+                ok("git_remote_url() 走 ssh://（避开本机最不稳定的 https 克隆）")
+            else:
+                bad("git_remote_url() 返回了非 ssh 地址：%s" % url,
+                    "https 直连克隆在本机实测常 0/3，改回 ssh://git@github.com/...")
+        except Exception as e:
+            bad("git_remote_url() 调用失败：%s" % e)
+
+    docs = [("docs/GITHUB_SYNC.md", "协同说明"), ("AGENTS.md", "Codex 协作规则")]
+    missing = [d for d, _ in docs if not os.path.isfile(os.path.join(HERE, d))]
+    if missing:
+        bad("协同文档缺失：%s" % "、".join(missing))
+    else:
+        ok("协同文档齐备（GITHUB_SYNC.md + AGENTS.md）")
+
+    gi = os.path.join(HERE, ".gitignore")
+    need = ["/_incoming/", "/_backup/", "/_gitclone_tmp/", ".env"]
+    if not os.path.isfile(gi):
+        bad(".gitignore 不存在（同步产物会被误提交）")
+    else:
+        gsrc = io.open(gi, encoding="utf-8").read()
+        lack = [n for n in need if n not in gsrc]
+        if lack:
+            bad(".gitignore 未忽略：%s" % "、".join(lack),
+                "同步产物/密钥若被提交会污染仓库，补上后再交付。")
+        else:
+            ok(".gitignore 覆盖同步产物与 .env")
+
+
 # ------------------------------------------------------------------ 入口
 
 def main(argv):
@@ -484,6 +612,7 @@ def main(argv):
         check_static(quick)
     check_contract()
     check_dist_sync()
+    check_sync_channel()
 
     sec("结论")
     print("  通过 %d 项 / 警告 %d 项 / 失败 %d 项" % (PASSES, len(WARNS), len(FAILS)))

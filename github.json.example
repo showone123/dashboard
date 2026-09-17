@@ -1,0 +1,6 @@
+{
+  "repo": "your-github-user/your-repo",
+  "ref": "main",
+  "provider": "github",
+  "_note": "这是示例文件，不含任何密钥，可提交到版本库。实际使用请跑：python github_sync.py --init <owner>/<repo> --ref main（会生成 github.json）。GITHUB_TOKEN 只走环境变量或 .env（已被 .gitignore 忽略）。"
+}

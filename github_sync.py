@@ -3,24 +3,28 @@
 
 设计前提（本机实测，2026-09-17）
 --------------------------------
-这台机器到 GitHub 的各条通道**不是全都通**：
+这台机器到 GitHub 的可达性是**间歇性**的，不是"通/不通"的二元状态 —— 同一个域名
+在几分钟内能从 0/3 变成 3/3。所以**任何单次结果都不能作为结论**，必须多轮探测 + 重试。
 
-    github.com:443          ❌ 不通（20 秒超时）→ 所以 `git clone https://github.com/...` 会失败
-    github.com:22           ✅ 通              → SSH 方式可用
-    ssh.github.com:443      ✅ 通              → SSH 走 443 也行（绕开上面那条封锁）
-    api.github.com:443      ✅ 通（含鉴权写接口）
-    codeload.github.com:443 ✅ 通（整库 zip）
-    raw.githubusercontent.com:443 ✅ 通（单文件）
+两轮实测（每目标连测 3 次）：
 
-结论：**不要用 HTTPS 克隆**。三条可用的路：
+    github.com:443          ⚠️ 抖动（1/3、0/3）→ `git clone https://github.com/...` 不可靠，别用
+    api.github.com:443      ✅ 稳定 3/3      → 只读/读写都行，最稳的一条
+    codeload.github.com:443 ✅ 稳定 3/3      → 整库 zip
+    raw.githubusercontent.com:443 ✅ 稳定 3/3 → 单文件
+    github.com:22           ⚠️ 抖动（6/6 与 0/3 都出现过）
+    ssh.github.com:443      ⚠️ 抖动（6/6 与 0/3 都出现过）
 
-    A. git over SSH（推荐，功能最全：分支/历史/合并都正常）
-       —— 需要一次性配置 SSH 密钥（见 --setup-guide）
-    B. GitHub API + Token（无需密钥，读写都行）
-       —— 读用 zipball，写用 Git Data API（本脚本已实现，会生成真正的 commit）
-    C. WorkBuddy 的 GitHub 连接器（平台原生，OAuth 授权，最省事）
+结论：**不要用 HTTPS 克隆**。三条可用的路，按稳健度排序 C > B > A：
 
-本脚本实现 A 与 B，并自动选择可用的那条。
+    C. WorkBuddy 的 GitHub 连接器（最稳：走 WorkBuddy 服务端，不受本机抖动影响）
+       —— 平台原生，OAuth 授权，不用在本机配密钥或 token，最省事
+    B. GitHub API + Token（脚本默认的回退路径）
+       —— 无需密钥；读用 zipball，写用 Git Data API（本脚本已实现，会生成真正的 commit）
+    A. git over SSH（功能最全：分支/历史/合并都正常）
+       —— 需要一次性配置 SSH 密钥（见 --setup-guide），且本机当前没有密钥
+
+本脚本实现 A 与 B，并自动选择可用的那条；两者对网络失败都带指数退避重试。
 
 六个动作
 --------
@@ -29,7 +33,7 @@
     python github_sync.py --pull               拉远端到 _incoming/（**不改本地**）+ 变更报告
     python github_sync.py --diff               比对 _incoming/ 与本地，列出差异
     python github_sync.py --apply              把 _incoming/ 覆盖到本地（先自动备份）
-    python github_sync.py --push -m "说明"      提交并推送本地改动
+    python github_sync.py --push -m "说明"      提交并推送本地改动（会先跑 verify.py 门禁）
 
 ⚠️ 本脚本**永远不会直接覆盖你的工作区**。--pull 只写 _incoming/，--apply 才落地，
    且落地前会把被覆盖的文件备份到 _backup/<时间戳>/。
@@ -106,6 +110,25 @@ def has_ssh_key():
             or os.path.isfile(os.path.expanduser("~/.ssh/id_rsa")))
 
 
+def git_env_extra():
+    """让 git 忽略"仓库属主与当前用户不一致"，**不修改任何配置文件**。
+
+    本机实测真实踩坑：source-export/.git 会被 git 判定为 dubious ownership
+    （fatal: detected dubious ownership in repository），导致 git status /
+    ls-files / commit / push 全部失败。其中 API 推送依赖 `git ls-files` 挑文件，
+    所以这个坑会连带把推送也打断。
+
+    解法用 GIT_CONFIG_COUNT 环境变量注入 safe.directory（git >= 2.31 支持），
+    只作用于本脚本拉起的子进程，不写 ~/.gitconfig，也不影响用户其他仓库。
+    """
+    n = int(os.environ.get("GIT_CONFIG_COUNT") or 0)
+    return {
+        "GIT_CONFIG_COUNT": str(n + 1),
+        "GIT_CONFIG_KEY_%d" % n: "safe.directory",
+        "GIT_CONFIG_VALUE_%d" % n: HERE.replace("\\", "/"),
+    }
+
+
 def run(cmd, env_extra=None, timeout=120, retry_net=1):
     """执行本地命令。
 
@@ -114,6 +137,7 @@ def run(cmd, env_extra=None, timeout=120, retry_net=1):
     本机 GitHub 可达性抖动，网络类 git 命令（clone / push / ls-remote）必须传 retry_net=4。
     """
     env = os.environ.copy()
+    env.update(git_env_extra())
     if env_extra:
         env.update(env_extra)
     net_markers = ("Unable to connect", "Could not connect", "Connection refused",
@@ -190,6 +214,35 @@ def http_once(url, method="GET", data=None, headers=None, timeout=60):
 def api_headers(t=None):
     t = t or token()
     return {"Authorization": "Bearer " + t} if t else {}
+
+
+def explain_api_error(code, raw):
+    """把 GitHub 的 http 码翻成"人话 + 下一步做什么"。
+
+    实测踩到的坑：**403 不一定是没权限**。本机匿名访问 GitHub API 时，出口 IP 的
+    60 次/小时配额一旦用尽，读公开库也会返回 403，报文体是
+    "API rate limit exceeded for <ip>"。这跟"仓库拒绝你"完全是两回事，
+    必须分开提示，否则会被误判成权限问题去瞎折腾。
+    """
+    body = ""
+    try:
+        body = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw)
+    except Exception:
+        pass
+    low = body.lower()
+    if code == 403 and ("rate limit" in low or "abuse" in low):
+        return ("匿名配额用尽（60 次/小时，按出口 IP 算）",
+                "读公开库也会 403。配 GITHUB_TOKEN 可提到 5000 次/小时，"
+                "或直接用 WorkBuddy 的 GitHub 连接器（已鉴权、不占本机配额）。")
+    if code == 403:
+        return ("被拒绝（可能是分支保护，或 token 缺 Contents 写权限）",
+                "检查 token 权限勾选 Contents=Read and write；分支保护会挡 API 更新 ref。")
+    if code == 401:
+        return ("鉴权失败（GITHUB_TOKEN 无效或已过期）", "重新生成 token 并写入 .env。")
+    if code == 404:
+        return ("读不到（私有库没配 token，或仓库名/分支名拼错）",
+                "私有库必须配 GITHUB_TOKEN；再核对 --init 的 owner/repo 与 --ref。")
+    return ("http=%s" % code, body[:160])
 
 
 def hr(c="-", n=78):
@@ -372,8 +425,15 @@ def do_status():
             c, o = run(cmd)
             first = (o.splitlines() or [""])[0] if o else ""
             if label == "未提交":
-                n = len([l for l in o.splitlines() if l.strip()]) if o else 0
-                say("  %-11s : %d 个文件未提交" % (label, n))
+                if c != 0:
+                    say("  %-11s : 读取失败" % label)
+                else:
+                    n = len([l for l in o.splitlines() if l.strip()]) if o else 0
+                    say("  %-11s : %d 个文件未提交" % (label, n))
+            elif c != 0 and "does not have any commits" in o:
+                say("  %-11s : （尚无提交 —— 仓库刚初始化，首次 --push 后才有）" % label)
+            elif c != 0:
+                say("  %-11s : 读取失败（%s）" % (label, first[:60]))
             else:
                 say("  %-11s : %s" % (label, first or "（无）"))
     else:
@@ -392,12 +452,10 @@ def do_status():
         d = json.loads(raw)
         say("  远端 HEAD   : %s  %s" % (d["sha"][:7], (d["commit"]["message"] or "").splitlines()[0]))
         say("  远端时间    : %s" % d["commit"]["committer"]["date"])
-    elif code == 404:
-        say("  远端 HEAD   : 读不到（私有库需 GITHUB_TOKEN，或仓库/分支名不对）")
-    elif code == 401:
-        say("  远端 HEAD   : 鉴权失败（GITHUB_TOKEN 无效或过期）")
     else:
-        say("  远端 HEAD   : 查询失败 http=%s" % code)
+        why, todo = explain_api_error(code, raw)
+        say("  远端 HEAD   : 查询失败 —— %s" % why)
+        say("                 建议：%s" % todo)
 
     # 部署产物
     idx = os.path.join(HERE, "index.html")
@@ -424,7 +482,8 @@ def fetch_via_api(cfg):
     url = "https://api.github.com/repos/%s/zipball/%s" % (cfg["repo"], ref)
     code, raw, _ = http(url, headers=api_headers(), timeout=180)
     if code != 200:
-        return None, "http=%s %s" % (code, raw[:200].decode("utf-8", "replace"))
+        why, todo = explain_api_error(code, raw)
+        return None, "%s\n     → %s" % (why, todo)
     return raw, None
 
 
@@ -473,8 +532,7 @@ def do_pull(force_api=False):
             raw, err = fetch_via_api(cfg)
     if err:
         print("  ❌ 拉取失败：%s" % err)
-        print("     检查：① 仓库名/分支名是否正确 ② 私有库是否配了 GITHUB_TOKEN")
-        print("           ③ 跑 python github_sync.py --probe 看通道")
+        print("     还可以跑 python github_sync.py --probe 看通道实时成功率。")
         return 1
 
     if os.path.isdir(INCOMING):
@@ -611,15 +669,19 @@ def do_apply():
 
     ts = time.strftime("%Y%m%d_%H%M%S")
     bdir = os.path.join(BACKUP, ts)
-    print("  将写入 %d 个文件；被覆盖的原文件备份到 _backup/%s/" % (len(targets), ts))
+    will_overwrite = [f for f in targets if os.path.isfile(os.path.join(HERE, f.replace("/", os.sep)))]
+    print("  将写入 %d 个文件（其中 %d 个会覆盖本地已有文件）" % (len(targets), len(will_overwrite)))
     for f in targets:
-        print("    → %s" % f)
+        print("    → %s%s" % (f, "  （覆盖，会先备份）" if f in will_overwrite else "  （新增）"))
+    if will_overwrite:
+        print("  备份目录：_backup/%s/" % ts)
     print()
     ans = input("  确认应用？输入 y 继续（其它任意键取消）：").strip().lower()
     if ans != "y":
         print("  已取消，本地未改动。")
         return 0
 
+    backed_up = 0
     for rel in targets:
         src = os.path.join(INCOMING, rel.replace("/", os.sep))
         dst = os.path.join(HERE, rel.replace("/", os.sep))
@@ -627,9 +689,14 @@ def do_apply():
             bk = os.path.join(bdir, rel.replace("/", os.sep))
             os.makedirs(os.path.dirname(bk), exist_ok=True)
             shutil.copy2(dst, bk)
+            backed_up += 1
         os.makedirs(os.path.dirname(dst) or HERE, exist_ok=True)
         shutil.copy2(src, dst)
-    print("  ✅ 已应用 %d 个文件。备份：%s" % (len(targets), os.path.relpath(bdir, HERE)))
+    if backed_up:
+        print("  ✅ 已应用 %d 个文件；%d 个被覆盖的原文件已备份到 %s"
+              % (len(targets), backed_up, os.path.relpath(bdir, HERE)))
+    else:
+        print("  ✅ 已应用 %d 个文件（全部为新增，无文件被覆盖，因此未产生备份）" % len(targets))
     print()
     print("  下一步必做：")
     print("    python verify.py      ← 必须全绿才谈部署")
