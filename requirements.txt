@@ -1,0 +1,27 @@
+# =============================================================================
+#  铜数据看板 · 订阅版 —— Python 依赖清单
+# =============================================================================
+#  ⚠️ 这份文件是「构建/工具链」的依赖，**不是运行时依赖**。
+#
+#  运行时（线上真正跑的东西）只有：
+#    · dist/server.py  —— 只用 Python 标准库（http.server / mimetypes / os）
+#      所以线上沙箱**不需要装任何 pip 包**，也不需要这个 requirements.txt。
+#    · 浏览器里的 index.html —— 依赖见 deps.lock.json（3 个 CDN/vendor 文件）
+#
+#  ⚠️ 不要把这份文件复制进 dist/：
+#      发布预检查会扫描依赖清单，一旦出现数据库驱动包名（pg / psycopg2 / mysql2 …）
+#      项目会被判定为「依赖外部服务」而拒绝发布。本文件里没有那些包，但
+#      dist/ 保持只有 server.py + index.html 是最安全的形态。
+#
+#  安装：pip install -r requirements.txt
+# =============================================================================
+
+# 生成「客户上传用」的 Excel 数据模板（build/make_excel.py）
+openpyxl>=3.1.0,<4.0.0
+
+# 说明：
+#  · 自检脚本（check_hazard.py / check_wiring.py / probe_scripts.py）
+#    只用标准库；probe_scripts.py 额外需要一个 node（见 docs/BUILD.md 的环境要求）。
+#  · 构建脚本（make_app.py / make_dashboard.py / make_test.py）只用标准库（json / os / base64）。
+#  · 端到端测试台（make_*test*.py / make_auth*.py）只用标准库，它们产出 HTML，
+#    真正的执行交给无头 Chrome（不需要 Python 侧的浏览器库）。

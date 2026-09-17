@@ -1,0 +1,61 @@
+# =============================================================================
+#  铜数据看板 · 订阅版 —— git 忽略规则
+# =============================================================================
+
+# 本地环境变量（.env.example 是要提交的模板，.env 不提交）
+.env
+.env.*
+!.env.example
+
+# ★ 构建产物：index.html 由 build/make_app.py 从 build/ 下的源码生成。
+#   提交它会让每次改动都产生一大坨 diff（24 万字节的单行敏感内容），
+#   也会让"改了源码忘了构建"这类问题被掩盖在 diff 里。
+#   dist/index.html 是部署产物，同样不提交。
+/index.html
+/dist/index.html
+index.html.vendor.html
+/dist/index.html.vendor.html
+
+# 测试台生成的 HTML（这些是产物，重新跑 build/make_*test*.py 就能再生成）
+/build/export_test.html
+/build/export_fab.html
+/build/export_ui.html
+/build/auth_test.html
+/build/auth_flow*.html
+/build/auth_probe.html
+/build/notif_*.html
+/build/roundtrip.html
+/build/out_export.html
+/build/_chk_*.js
+
+# 截图与验收证据（不进版本库）
+# ⚠️ 注意用 outputs/* 而不是 outputs/ —— 后者会让下面的 ! 反向规则失效，
+#    而 make_test.py 需要 outputs/ 里的数据契约样例 xlsx，那个必须能提交。
+outputs/*
+!outputs/铜期货源数据_20260915.xlsx
+*.png
+*.jpg
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# GitHub 同步脚本的本地暂存与备份
+/_incoming/
+/_backup/
+/_gitclone_tmp/
+
+# 说明：
+#  · vendor/ **要**提交 —— 它是锁定的依赖副本，是离线构建的依据。
+#  · deps.lock.json / contract.json **要**提交 —— 它们是门禁的基准。
+#  · migrations/ **要**提交。

@@ -1,0 +1,79 @@
+{
+  "_comment": "铜数据看板 · 订阅版 —— 外部依赖锁定清单。运行时（浏览器侧）全部依赖都在这里。换机器/换环境后跑 `python vendor_deps.py --check` 校验一致性。",
+  "_generated_at": "2026-09-17",
+  "_critical_note": [
+
+    "WorkBuddy Cloud SDK 已固定为 0.1.1-dev.111acaf.202609102031。",
+    "   该版本与 vendor/index.global.js 的 SHA-256 一致；升级时必须同时更新构建地址、vendor 文件与本锁文件。",
+
+    "⚠️ xlsx / jszip 是固定版本号（0.18.5 / 3.10.1），风险低，但仍是外部单点。"
+  ],
+
+  "runtime_browser_deps": [
+    {
+      "name": "workbuddy-cloud-sdk",
+      "role": "云服务 SDK：登录注册、数据库查询构造器、文件存储",
+      "global_var": "WorkBuddyCloud",
+      "cdn_url_used_by_build": "https://cdn.jsdelivr.net/npm/@tencent-ai/workbuddy-cloud-sdk@0.1.1-dev.111acaf.202609102031/lib/index.global.js",
+      "npm_spec": "@tencent-ai/workbuddy-cloud-sdk@0.1.1-dev.111acaf.202609102031",
+      "requested_tag": "0.1.1-dev.111acaf.202609102031",
+      "resolved_version": "0.1.1-dev.111acaf.202609102031",
+      "resolved_at": "2026-09-17",
+      "is_floating": false,
+      "pinned_recommended_url": "https://cdn.jsdelivr.net/npm/@tencent-ai/workbuddy-cloud-sdk@0.1.1-dev.111acaf.202609102031/lib/index.global.js",
+      "bytes": 60265,
+      "sha256": "0562c60cf3c92abd3753a14f53eb3e4a2d83cab975a1f230d6991d138c2b3a96",
+      "vendor_path": "vendor/index.global.js",
+      "vendor_verified_match": true
+    },
+    {
+      "name": "xlsx (SheetJS)",
+      "role": "解析客户上传的 Excel 工作簿（工作簿 → 标准数据结构）",
+      "global_var": "XLSX",
+      "cdn_url_used_by_build": "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js",
+      "npm_spec": "xlsx@0.18.5",
+      "requested_tag": "0.18.5",
+      "resolved_version": "0.18.5",
+      "resolved_at": "2026-09-17",
+      "is_floating": false,
+      "bytes": 881727,
+      "sha256": "c9506197caf809a075b6dee1da0d36fb19da7158ffe8a88e7b0c96c5d8623c99",
+      "vendor_path": "vendor/xlsx.full.min.js",
+      "vendor_verified_match": true
+    },
+    {
+      "name": "jszip",
+      "role": "导出功能：打包成可下载的 zip（多文件成果导出）",
+      "global_var": "JSZip",
+      "cdn_url_used_by_build": "https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js",
+      "npm_spec": "jszip@3.10.1",
+      "requested_tag": "3.10.1",
+      "resolved_version": "3.10.1",
+      "resolved_at": "2026-09-17",
+      "is_floating": false,
+      "bytes": 97630,
+      "sha256": "acc7e41455a80765b5fd9c7ee1b8078a6d160bbbca455aeae854de65c947d59e",
+      "vendor_path": "vendor/jszip.min.js",
+      "vendor_verified_match": true
+    }
+  ],
+
+  "build_tooling_deps": {
+    "_file": "requirements.txt",
+    "_note": "构建/工具链依赖，不是运行时依赖。线上沙箱不需要装任何 pip 包。",
+    "python_packages": [
+      { "name": "openpyxl", "spec": ">=3.1.0,<4.0.0", "used_by": "build/make_excel.py" }
+    ],
+    "external_binaries": [
+      { "name": "node", "used_by": "build/probe_scripts.py（跑 node --check 校验每个 script 块）", "required": false, "note": "缺失时该项自检跳过，其余检查照常" },
+      { "name": "Google Chrome / Edge", "used_by": "端到端测试台与截图（无头模式）", "required": false },
+      { "name": "Python", "spec": ">=3.8（实测 3.13.12）", "used_by": "全部构建与自检脚本", "required": true }
+    ]
+  },
+
+  "npm_dependencies": {
+    "_note": "本项目**没有** npm 依赖树 —— 没有 package.json、没有 node_modules、没有构建工具链。前端源码就是 6 个 .js/.css 文件，由 build/make_app.py 拼成单个 HTML。不要为了「规范化」引入 bundler，那会破坏单文件交付形态。",
+    "package_json": null,
+    "node_modules": null
+  }
+}

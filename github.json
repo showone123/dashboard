@@ -1,0 +1,6 @@
+{
+  "repo": "showone123/dashboard",
+  "ref": "main",
+  "provider": "github",
+  "_note": "本文件可提交到版本库，不含任何密钥。Token 走环境变量 GITHUB_TOKEN 或 .env。"
+}
