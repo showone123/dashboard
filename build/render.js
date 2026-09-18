@@ -11,6 +11,22 @@
   const DN = '#00c853', DN2 = '#1fe074';     // 跌 → 绿
   const GOLD = '#f0b90b', GOLD2 = '#ffd24a';
 
+  const cssColor = (name, fallback) => {
+    const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return value || fallback;
+  };
+  const chartPalette = () => ({
+    grid: cssColor('--chart-grid', 'rgba(255,255,255,.06)'),
+    axis: cssColor('--chart-axis', '#7c8699'),
+    plot: cssColor('--chart-plot-bg', 'rgba(0,0,0,.15)'),
+    label: cssColor('--chart-label', '#d7dbe7'),
+    point: cssColor('--chart-point-stroke', '#0a0e17'),
+    zero: cssColor('--chart-zero', 'rgba(255,255,255,.20)'),
+    accent: cssColor('--gold', GOLD),
+    accent2: cssColor('--gold2', GOLD2),
+    dim2: cssColor('--dim2', '#5b6478')
+  });
+
   const nf = (n, d) => {
     if (n === null || n === undefined || n === '') return '—';
     const x = Number(n);
@@ -402,7 +418,7 @@ ${(D.inventory || []).length ? `<div class="card">
     const W = Math.max(320, wrap.clientWidth - 4), H = 430;
     cv.width = W * dpr; cv.height = H * dpr;
     cv.style.width = W + 'px'; cv.style.height = H + 'px';
-    const ctx = cv.getContext('2d');
+    const ctx = cv.getContext('2d'), P = chartPalette();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
 
     const padL = 10, padR = 62, padT = 10, padB = 26;
@@ -423,16 +439,16 @@ ${(D.inventory || []).length ? `<div class="card">
     const yV = v => volBot - (v / maxV) * (volBot - volTop);
     const yOI = oi => volBot - (oi - minOI) / (maxOI - minOI || 1) * (volBot - volTop);
 
-    ctx.strokeStyle = 'rgba(255,255,255,.05)'; ctx.lineWidth = 1;
-    ctx.fillStyle = '#7c8699'; ctx.font = '10px monospace'; ctx.textAlign = 'left';
+    ctx.strokeStyle = P.grid; ctx.lineWidth = 1;
+    ctx.fillStyle = P.axis; ctx.font = '10px monospace'; ctx.textAlign = 'left';
     for (let i = 0; i <= 5; i++) {
       const y = priceTop + (priceBot - priceTop) * i / 5;
       const p = maxP - (maxP - minP) * i / 5;
       ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
       ctx.fillText(Math.round(p).toLocaleString(), W - padR + 5, y + 3);
     }
-    ctx.fillStyle = 'rgba(0,0,0,.15)'; ctx.fillRect(padL, volTop, plotW, volBot - volTop);
-    ctx.strokeStyle = 'rgba(255,255,255,.05)';
+    ctx.fillStyle = P.plot; ctx.fillRect(padL, volTop, plotW, volBot - volTop);
+    ctx.strokeStyle = P.grid;
     ctx.beginPath(); ctx.moveTo(padL, volTop); ctx.lineTo(W - padR, volTop); ctx.stroke();
 
     bars.forEach((b, i) => {
@@ -450,28 +466,28 @@ ${(D.inventory || []).length ? `<div class="card">
       ctx.globalAlpha = 1;
     });
 
-    ctx.strokeStyle = GOLD; ctx.lineWidth = 1.4; ctx.beginPath();
+    ctx.strokeStyle = P.accent; ctx.lineWidth = 1.4; ctx.beginPath();
     bars.forEach((b, i) => {
       const x = padL + (i + 0.5) * step, y = yOI(b.oi);
       i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
     });
     ctx.stroke();
-    ctx.fillStyle = GOLD; ctx.font = '10px monospace';
+    ctx.fillStyle = P.accent; ctx.font = '10px monospace';
     ctx.fillText('─ 持仓量 OI', padL + 4, volTop + 12);
     ctx.fillText(Math.round(maxOI).toLocaleString(), W - padR + 5, volTop + 12);
     ctx.fillText(Math.round(minOI).toLocaleString(), W - padR + 5, volBot - 2);
 
-    ctx.fillStyle = '#5b6478'; ctx.textAlign = 'center';
+    ctx.fillStyle = P.dim2; ctx.textAlign = 'center';
     const idx = [];
     const stride = Math.max(1, Math.floor(n / 7));
     for (let i = n - 1; i >= 0 && idx.length < 7; i -= stride) idx.push(i);
     idx.forEach(i => { const b = bars[i]; if (b.d) ctx.fillText(b.d, padL + (i + 0.5) * step, volBot + 14); });
 
     const last = bars[n - 1], yl = yP(last.c);
-    ctx.strokeStyle = 'rgba(240,185,11,.5)'; ctx.setLineDash([3, 3]);
+    ctx.strokeStyle = P.accent; ctx.globalAlpha = .5; ctx.setLineDash([3, 3]);
     ctx.beginPath(); ctx.moveTo(padL, yl); ctx.lineTo(W - padR, yl); ctx.stroke(); ctx.setLineDash([]);
-    ctx.fillStyle = GOLD; ctx.fillRect(W - padR, yl - 8, padR, 16);
-    ctx.fillStyle = '#0a0e17'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
+    ctx.globalAlpha = 1; ctx.fillStyle = P.accent; ctx.fillRect(W - padR, yl - 8, padR, 16);
+    ctx.fillStyle = P.point; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
     ctx.fillText(last.c.toLocaleString(), W - padR / 2, yl + 3);
     ctx.textAlign = 'left';
   }
@@ -479,7 +495,7 @@ ${(D.inventory || []).length ? `<div class="card">
   /* ==================== 图表：期限结构 ==================== */
   function drawTerm(host, D) {
     if (!host || host.dataset.built) return;
-    const C = D.contracts || [];
+    const C = D.contracts || [], P = chartPalette();
     if (C.length < 2) { host.innerHTML = '<div class="dim" style="padding:20px">合约数据不足</div>'; host.dataset.built = 1; return; }
     const ps = C.map(c => c.p), mn = Math.min(...ps), mx = Math.max(...ps);
     const W = 820, H = 300, padL = 60, padR = 20, padT = 24, padB = 44;
@@ -489,16 +505,16 @@ ${(D.inventory || []).length ? `<div class="card">
     let g = '';
     for (let i = 0; i <= 4; i++) {
       const yy = padT + plotH * i / 4, val = mx - (mx - mn) * i / 4;
-      g += `<line x1="${padL}" y1="${yy}" x2="${W - padR}" y2="${yy}" stroke="rgba(255,255,255,.06)"/><text x="${padL - 6}" y="${yy + 3}" fill="#7c8699" font-size="10" text-anchor="end">${Math.round(val).toLocaleString()}</text>`;
+      g += `<line x1="${padL}" y1="${yy}" x2="${W - padR}" y2="${yy}" stroke="${P.grid}"/><text x="${padL - 6}" y="${yy + 3}" fill="${P.axis}" font-size="10" text-anchor="end">${Math.round(val).toLocaleString()}</text>`;
     }
-    const area = `<polygon points="${padL},${padT + plotH} ` + C.map((c, i) => `${x(i)},${y(c.p)}`).join(' ') + ` ${x(C.length - 1)},${padT + plotH}" fill="rgba(240,185,11,.07)"/>`;
-    const line = `<polyline points="` + C.map((c, i) => `${x(i)},${y(c.p)}`).join(' ') + `" fill="none" stroke="${GOLD}" stroke-width="2"/>`;
+    const area = `<polygon points="${padL},${padT + plotH} ` + C.map((c, i) => `${x(i)},${y(c.p)}`).join(' ') + ` ${x(C.length - 1)},${padT + plotH}" fill="${P.accent}" opacity=".07"/>`;
+    const line = `<polyline points="` + C.map((c, i) => `${x(i)},${y(c.p)}`).join(' ') + `" fill="none" stroke="${P.accent}" stroke-width="2"/>`;
     const pts = C.map((c, i) => {
       const isMain = c.c === D.meta.contract;
       const showLabel = C.length <= 8 || i % 2 === 0 || isMain;
-      return `<circle cx="${x(i)}" cy="${y(c.p)}" r="${isMain ? 5 : 3}" fill="${isMain ? GOLD : '#3d7fff'}" stroke="#0a0e17" stroke-width="1"/>` +
-        (showLabel ? `<text x="${x(i)}" y="${y(c.p) - 10}" fill="${isMain ? GOLD2 : '#d7dbe7'}" font-size="10" text-anchor="middle">${c.p.toLocaleString()}</text>` : '') +
-        `<text x="${x(i)}" y="${H - padB + 16}" fill="${isMain ? GOLD : '#7c8699'}" font-size="10" text-anchor="middle">${c.c}</text>`;
+      return `<circle cx="${x(i)}" cy="${y(c.p)}" r="${isMain ? 5 : 3}" fill="${isMain ? P.accent : '#3d7fff'}" stroke="${P.point}" stroke-width="1"/>` +
+        (showLabel ? `<text x="${x(i)}" y="${y(c.p) - 10}" fill="${isMain ? P.accent2 : P.label}" font-size="10" text-anchor="middle">${c.p.toLocaleString()}</text>` : '') +
+        `<text x="${x(i)}" y="${H - padB + 16}" fill="${isMain ? P.accent : P.axis}" font-size="10" text-anchor="middle">${c.c}</text>`;
     }).join('');
     host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${g}${area}${line}${pts}</svg>`;
     host.dataset.built = 1;
@@ -526,7 +542,7 @@ ${(D.inventory || []).length ? `<div class="card">
   /* ==================== 图表：季节性 ==================== */
   function drawSeason(host, D) {
     if (!host || host.dataset.built) return;
-    const S = D.season || [];
+    const S = D.season || [], P = chartPalette();
     if (!S.length) { host.innerHTML = '<div class="dim" style="padding:20px">季节性数据缺失</div>'; host.dataset.built = 1; return; }
     const curMonth = new Date().getMonth() + 1;
     const W = 820, H = 290, padL = 46, padR = 10, padT = 20, padB = 50;
@@ -534,15 +550,15 @@ ${(D.inventory || []).length ? `<div class="card">
     const maxAbs = Math.max(...S.map(s => Math.abs(s.r))) || 1;
     const zeroY = padT + plotH / 2;
     const bw = plotW / S.length * 0.55;
-    let g = `<line x1="${padL}" y1="${zeroY}" x2="${W - padR}" y2="${zeroY}" stroke="rgba(255,255,255,.2)"/>`;
+    let g = `<line x1="${padL}" y1="${zeroY}" x2="${W - padR}" y2="${zeroY}" stroke="${P.zero}"/>`;
     for (let i = -2; i <= 2; i++) {
       if (i === 0) continue;
       const yy = zeroY - (i * plotH / 4 / 2);
-      g += `<line x1="${padL}" y1="${yy}" x2="${W - padR}" y2="${yy}" stroke="rgba(255,255,255,.05)"/>`;
+      g += `<line x1="${padL}" y1="${yy}" x2="${W - padR}" y2="${yy}" stroke="${P.grid}"/>`;
     }
-    g += `<text x="${padL - 6}" y="${zeroY + 3}" fill="#9e9e9e" font-size="10" text-anchor="end">0%</text>`;
-    g += `<text x="${padL - 6}" y="${padT + 8}" fill="#9e9e9e" font-size="10" text-anchor="end">+${maxAbs.toFixed(1)}%</text>`;
-    g += `<text x="${padL - 6}" y="${padT + plotH - 2}" fill="#9e9e9e" font-size="10" text-anchor="end">-${maxAbs.toFixed(1)}%</text>`;
+    g += `<text x="${padL - 6}" y="${zeroY + 3}" fill="${P.axis}" font-size="10" text-anchor="end">0%</text>`;
+    g += `<text x="${padL - 6}" y="${padT + 8}" fill="${P.axis}" font-size="10" text-anchor="end">+${maxAbs.toFixed(1)}%</text>`;
+    g += `<text x="${padL - 6}" y="${padT + plotH - 2}" fill="${P.axis}" font-size="10" text-anchor="end">-${maxAbs.toFixed(1)}%</text>`;
     S.forEach((s, i) => {
       const cx = padL + (i + 0.5) * plotW / S.length;
       const bh = (Math.abs(s.r) / maxAbs) * (plotH / 2);
@@ -550,10 +566,10 @@ ${(D.inventory || []).length ? `<div class="card">
       const col = s.r >= 0 ? UP : DN;
       const mon = parseInt(s.m, 10);
       const cur = mon === curMonth;
-      g += `<rect x="${cx - bw / 2}" y="${by}" width="${bw}" height="${Math.max(1, bh)}" fill="${col}" opacity="${cur ? 1 : 0.65}" stroke="${cur ? GOLD2 : 'none'}" stroke-width="2"/>`;
+      g += `<rect x="${cx - bw / 2}" y="${by}" width="${bw}" height="${Math.max(1, bh)}" fill="${col}" opacity="${cur ? 1 : 0.65}" stroke="${cur ? P.accent2 : 'none'}" stroke-width="2"/>`;
       g += `<text x="${cx}" y="${s.r >= 0 ? by - 5 : by + bh + 12}" fill="${col}" font-size="10" text-anchor="middle" font-weight="${cur ? 'bold' : 'normal'}">${s.r > 0 ? '+' : ''}${Number(s.r).toFixed(2)}%</text>`;
-      g += `<text x="${cx}" y="${H - padB + 14}" fill="${cur ? GOLD2 : '#7c8699'}" font-size="11" text-anchor="middle" font-weight="${cur ? 'bold' : 'normal'}">${esc(s.m)}</text>`;
-      g += `<text x="${cx}" y="${H - padB + 28}" fill="#5b6478" font-size="9" text-anchor="middle">胜率${Math.round(s.w)}%</text>`;
+      g += `<text x="${cx}" y="${H - padB + 14}" fill="${cur ? P.accent2 : P.axis}" font-size="11" text-anchor="middle" font-weight="${cur ? 'bold' : 'normal'}">${esc(s.m)}</text>`;
+      g += `<text x="${cx}" y="${H - padB + 28}" fill="${P.dim2}" font-size="9" text-anchor="middle">胜率${Math.round(s.w)}%</text>`;
     });
     host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${g}</svg>`;
     host.dataset.built = 1;

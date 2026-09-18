@@ -30,6 +30,7 @@ TPL = """<!DOCTYPE html>
 <title>FluxDesk · 数据工作站</title>
 <meta name="description" content="FluxDesk 数据工作站：上传业务数据，集中查看专业看板、历史记录与风险日志。"/>
 <link rel="icon" type="image/png" href="/assets/fluxdesk-companion.png"/>
+<script>document.documentElement.dataset.theme='light';</script>
 <style id="wbTheme">
 __THEME__
 </style>
@@ -41,8 +42,25 @@ __APPCSS__
 
 <!-- ==================== 认证 ==================== -->
 <div class="auth-wrap" id="viewAuth">
-  <div class="auth-card">
-    <div class="auth-head">
+  <canvas class="particle-canvas" id="authParticles" aria-hidden="true"></canvas>
+  <div class="auth-brand">
+    <img class="brand-companion" src="/assets/fluxdesk-companion.png" alt=""/>
+    <div class="brand-wordmark">Flux<span>Desk</span></div>
+  </div>
+  <button class="theme-toggle auth-theme-toggle" type="button" data-theme-toggle aria-label="切换明暗主题">
+    <span class="theme-sun">☼</span><span class="theme-moon">◐</span><span data-theme-label>浅色</span>
+  </button>
+  <div class="auth-story">
+    <div class="auth-eyebrow">INTELLIGENT DATA WORKSPACE</div>
+    <h1>让复杂数据，<br/><span>自然汇聚成答案。</span></h1>
+    <p>一个专注于行情洞察、账户关系和风险日志的工作站。把分散的数据收拢到同一视野，让每一次判断都有依据。</p>
+    <div class="auth-facts"><span><i></i>数据服务运行正常</span><span>21 张数据表已连接</span><span>访问权限校验</span></div>
+  </div>
+  <div class="auth-zone">
+   <div class="auth-card">
+    <div class="auth-card-title">欢迎回来</div>
+    <div class="auth-card-lead">登录 FluxDesk，继续你的工作。</div>
+    <div class="auth-head compact-brand">
       <img class="brand-companion auth-companion" src="/assets/fluxdesk-companion.png" alt=""/>
       <div class="brand-wordmark">Flux<span>Desk</span></div>
     </div>
@@ -56,6 +74,8 @@ __APPCSS__
     </div>
     <div id="authForm"></div>
     <div class="msg" id="authMsg"></div>
+    <div class="auth-security">◇ 账户与数据访问均受权限控制。</div>
+   </div>
   </div>
 </div>
 
@@ -75,6 +95,7 @@ __APPCSS__
 
 <!-- ==================== 应用主体 ==================== -->
 <div class="hidden" id="viewApp">
+  <canvas class="particle-canvas app-particle-canvas" id="appParticles" aria-hidden="true"></canvas>
   <header class="appbar">
     <div class="brand">
       <img class="brand-companion" src="/assets/fluxdesk-companion.png" alt=""/>
@@ -89,6 +110,9 @@ __APPCSS__
       <button class="app-tab hidden" data-tab="admin" id="tabAdmin" type="button">运营台<span class="dotbadge hidden" id="adminBadge">0</span></button>
     </nav>
     <div class="me">
+      <button class="theme-toggle app-theme-toggle" type="button" data-theme-toggle aria-label="切换明暗主题">
+        <span class="theme-sun">☼</span><span class="theme-moon">◐</span><span data-theme-label>浅色</span>
+      </button>
       <button class="bell" id="btnBell" type="button" aria-label="消息通知" title="通知">
         <span class="bell-ic">🔔</span><span class="bell-dot hidden" id="bellDot"></span>
       </button>

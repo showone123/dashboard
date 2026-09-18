@@ -97,6 +97,100 @@
     setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
   }
 
+  /* ---------- 明暗主题与环境粒子 ---------- */
+  function currentTheme() {
+    return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  }
+  function syncThemeControls() {
+    var dark = currentTheme() === 'dark';
+    document.querySelectorAll('[data-theme-toggle]').forEach(function (b) {
+      b.setAttribute('aria-pressed', dark ? 'true' : 'false');
+      b.setAttribute('title', dark ? '切换到浅色主题' : '切换到深色主题');
+      var label = b.querySelector('[data-theme-label]');
+      if (label) label.textContent = dark ? '浅色' : '深色';
+    });
+  }
+  function applyTheme(theme, refreshDashboard) {
+    var next = theme === 'dark' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', next);
+    syncThemeControls();
+    if (refreshDashboard && S.data && S.mounted && $('cuRoot')) {
+      var active = $('cuRoot').querySelector('.nav-item.active');
+      var page = active ? active.getAttribute('data-page') : 'p1';
+      CuRender.mount($('cuRoot'), S.data);
+      var target = $('cuRoot').querySelector('.nav-item[data-page="' + page + '"]');
+      if (target && page !== 'p1') target.click();
+    }
+  }
+  function toggleTheme() {
+    applyTheme(currentTheme() === 'dark' ? 'light' : 'dark', true);
+  }
+  function createParticleField(canvasId, count, interactive) {
+    var canvas = $(canvasId);
+    if (!canvas || !canvas.getContext || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var ctx = canvas.getContext('2d');
+    var points = [], width = 0, height = 0, dpr = 1;
+    var pointer = { x: -9999, y: -9999 };
+    function resize() {
+      var rect = canvas.getBoundingClientRect();
+      var oldWidth = width, oldHeight = height;
+      width = Math.max(1, rect.width); height = Math.max(1, rect.height);
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (oldWidth <= 1 || oldHeight <= 1 || Math.abs(oldWidth - width) > 160 || Math.abs(oldHeight - height) > 160) points = [];
+      while (points.length < count) points.push({
+        x: Math.random() * width, y: Math.random() * height,
+        vx: (Math.random() - .5) * (interactive ? .34 : .16),
+        vy: (Math.random() - .5) * (interactive ? .34 : .16),
+        r: .7 + Math.random() * 1.35
+      });
+    }
+    function movePointer(e) {
+      var rect = canvas.getBoundingClientRect();
+      pointer.x = e.clientX - rect.left; pointer.y = e.clientY - rect.top;
+    }
+    function frame() {
+      if (canvas.clientWidth > 1 && canvas.clientHeight > 1 &&
+          (Math.abs(canvas.clientWidth - width) > 1 || Math.abs(canvas.clientHeight - height) > 1)) resize();
+      if (width && height) {
+        ctx.clearRect(0, 0, width, height);
+        var dark = currentTheme() === 'dark';
+        var dot = dark ? '111,231,255' : '58,93,182';
+        var line = dark ? '92,212,255' : '81,113,190';
+        var reach = interactive ? 132 : 115;
+        for (var i = 0; i < points.length; i++) {
+          var p = points[i];
+          if (interactive) {
+            var dx = p.x - pointer.x, dy = p.y - pointer.y, ds = dx * dx + dy * dy;
+            if (ds < 7200 && ds > 1) { p.vx += dx / ds * .085; p.vy += dy / ds * .085; }
+          }
+          p.vx *= .995; p.vy *= .995; p.x += p.vx; p.y += p.vy;
+          if (p.x < -8) p.x = width + 8; else if (p.x > width + 8) p.x = -8;
+          if (p.y < -8) p.y = height + 8; else if (p.y > height + 8) p.y = -8;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(' + dot + ',' + (interactive ? .42 : .18) + ')'; ctx.fill();
+          for (var j = i + 1; j < points.length; j++) {
+            var q = points[j], lx = p.x - q.x, ly = p.y - q.y, dist = Math.sqrt(lx * lx + ly * ly);
+            if (dist < reach) {
+              ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y);
+              ctx.strokeStyle = 'rgba(' + line + ',' + ((1 - dist / reach) * (interactive ? .16 : .055)) + ')';
+              ctx.lineWidth = .7; ctx.stroke();
+            }
+          }
+        }
+      }
+      window.requestAnimationFrame(frame);
+    }
+    resize();
+    window.addEventListener('resize', resize);
+    if (interactive) {
+      canvas.addEventListener('pointermove', movePointer);
+      canvas.addEventListener('pointerleave', function () { pointer.x = -9999; pointer.y = -9999; });
+    }
+    window.requestAnimationFrame(frame);
+  }
+
   /* ==================== 认证界面 ==================== */
   var authMode = 'login-password';
   var otpCtx = {};
@@ -1608,6 +1702,12 @@
 
   /* ==================== 绑定事件 ==================== */
   function bind() {
+    document.querySelectorAll('[data-theme-toggle]').forEach(function (b) {
+      b.addEventListener('click', toggleTheme);
+    });
+    syncThemeControls();
+    createParticleField('authParticles', 92, true);
+    createParticleField('appParticles', 54, false);
     document.querySelectorAll('.app-tab').forEach(function (b) {
       b.addEventListener('click', function () { switchTab(b.getAttribute('data-tab')); });
     });

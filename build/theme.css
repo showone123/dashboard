@@ -199,3 +199,42 @@ footer.bottom .foot-note{color:#6b7185}
   header.topbar{display:none}
   .layout{margin-top:0}
 }
+
+/* ==========================================================================
+   FluxDesk 视觉系统：浅色默认 / 深色可切换
+   ========================================================================== */
+html[data-theme="light"]{
+  --bg:#f3f5f9;--bg2:#eef2f7;--panel:#ffffff;--panel2:#f8f9fc;
+  --border:#dfe4ec;--border2:#cfd6e2;--text:#171a21;--dim:#697386;--dim2:#8e97a7;
+  --gold:#5875e8;--gold2:#4664cf;--up:#d94b5a;--up2:#c93e4d;--down:#168b60;--down2:#11764f;
+  --gray:#6f7888;--blue:#5875e8;--cyan:#159cab;
+  --chart-grid:rgba(37,50,75,.10);--chart-axis:#748096;--chart-plot-bg:rgba(88,117,232,.045);
+  --chart-label:#3d485c;--chart-point-stroke:#ffffff;--chart-zero:rgba(37,50,75,.24);
+}
+html[data-theme="dark"]{
+  --bg:#080a0f;--bg2:#0b0e14;--panel:#0e1118;--panel2:#121621;
+  --border:#202632;--border2:#30394a;--text:#f4f6fb;--dim:#8993a6;--dim2:#5e687a;
+  --gold:#7c9cff;--gold2:#9cb3ff;--up:#ff6d7a;--up2:#ff8791;--down:#54d69c;--down2:#72e2b1;
+  --gray:#9ca5b5;--blue:#7c9cff;--cyan:#4dd8e8;
+  --chart-grid:rgba(255,255,255,.06);--chart-axis:#7c8699;--chart-plot-bg:rgba(0,0,0,.15);
+  --chart-label:#d7dbe7;--chart-point-stroke:#0a0e17;--chart-zero:rgba(255,255,255,.20);
+}
+body{background:transparent;color:var(--text);transition:color .2s ease}
+header.topbar{background:color-mix(in srgb,var(--bg) 80%,transparent);border-color:var(--border);box-shadow:0 1px rgba(255,255,255,.03);backdrop-filter:blur(16px)}
+aside.side{background:color-mix(in srgb,var(--panel) 88%,transparent);border-color:var(--border);backdrop-filter:blur(18px)}
+.pill{background:color-mix(in srgb,var(--panel2) 78%,transparent);border-color:var(--border)}
+.nav-item:hover{background:var(--panel2);color:var(--text)}
+.nav-item.active{background:color-mix(in srgb,var(--gold) 12%,var(--panel));color:var(--gold2);border-left-color:var(--gold)}
+.page-head{border-color:var(--border)}
+.card,.period-col,.sc-item{background:color-mix(in srgb,var(--panel) 89%,transparent);border-color:var(--border);border-radius:12px;box-shadow:0 14px 34px rgba(27,37,59,.07),inset 0 1px rgba(255,255,255,.05);backdrop-filter:blur(14px)}
+.kpi.glow{background:color-mix(in srgb,var(--gold) 9%,var(--panel));box-shadow:inset 3px 0 var(--gold)}
+.kpi.glow::after{display:none}
+th{background:color-mix(in srgb,var(--panel2) 94%,transparent);border-color:var(--border2)}
+td,.stat-row,.ind,.ev-item{border-color:color-mix(in srgb,var(--border) 72%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--gold) 7%,transparent)}
+.sig-bar{background:color-mix(in srgb,var(--dim) 13%,transparent)}
+.stat-box,.info-strip{background:color-mix(in srgb,var(--panel2) 80%,transparent);border-color:var(--border)}
+footer.bottom{background:color-mix(in srgb,var(--panel) 92%,transparent);border-color:var(--border)}
+html[data-theme="light"] ::-webkit-scrollbar-track{background:#eef2f7}
+html[data-theme="light"] ::-webkit-scrollbar-thumb{background:#c5ccd8}
+html[data-theme="light"] .row-hl{background:rgba(88,117,232,.07)}
