@@ -633,6 +633,20 @@ def main(argv):
     else:
         bad("期货工具箱 localStorage 键契约被改动")
 
+    # 前端标签 vs 后端抓取白名单：必须完全一致（含顺序，首个即默认分类）。
+    # 只删一边的后果——留标签：点一下就 400；留后端：没人看的分类仍每 6 小时去抓一次。
+    # 2026-09-18 下线「期货公司」「期货软件」时加这条，防止以后再出现半截改动。
+    svc = rd("build", "futures_service.py") or ""
+    m_backend = re.search(r"SOURCES = \{(.*?)\n\}", svc, re.S)
+    m_front = re.search(r"var categories = \[(.*?)\];", js, re.S)
+    backend = re.findall(r"'([a-z][a-z0-9_]*)': \(", m_backend.group(1)) if m_backend else []
+    front = re.findall(r"\['([a-z][a-z0-9_]*)'", m_front.group(1)) if m_front else []
+    if backend and backend == front:
+        ok("期货工具箱分类一致（前端标签 == 后端抓取白名单）：%s" % "/".join(backend))
+    else:
+        bad("期货工具箱分类不一致：前端 %s / 后端 %s" % (front or "解析失败", backend or "解析失败"),
+            "两侧必须同时增删；只改一边会出现「标签点了就 400」或「无人访问仍在抓取」。")
+
     sec("结论")
     print("  通过 %d 项 / 警告 %d 项 / 失败 %d 项" % (PASSES, len(WARNS), len(FAILS)))
     if WARNS:

@@ -19,12 +19,13 @@ from urllib.parse import parse_qs, urljoin, urlsplit
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 BASE = 'https://www.9qihuo.com'
+# 抓取目标白名单。2026-09-18 按用户要求下线公司类（/gongsi）与软件类（/ruanjian）两个来源页：
+# 不在此表内的 key 一律在 Cache.source() 抛 ValueError → 接口返回 400，不会触发抓取。
+# 分类集合必须与 build/futures.js 的 categories 完全一致（verify.py §9 会比对）。
 SOURCES = {
     'futures': ('期货手续费', '/qihuoshouxufei'),
     'options': ('期权手续费', '/qiquanshouxufei'),
-    'companies': ('期货公司', '/gongsi'),
     'articles': ('期货资料', '/fenlei/ziliao'),
-    'software': ('期货软件', '/ruanjian'),
 }
 FUTURE_COLUMNS = ['合约品种', '参考价格', '涨/跌停板', '买开保证金%', '卖开保证金%',
                   '保证金/每手', '开仓手续费', '平昨手续费', '平今手续费',
@@ -144,36 +145,18 @@ def parse_page(key, html, url):
                 record = item(a.text(), link, '期权品种')
                 record['product'] = code
                 records.append(record)
-    elif key == 'companies':
-        for row in root.find(cls='off-section-li'):
-            a = first(first(row.find(cls='off-address-name')).find('a'))
-            flags = [n.text() for n in row.find(cls='msg-flag') if '访问：' not in n.text()]
-            address = next((n.text() for n in row.find(cls='right-info') if n.text().startswith('公司地址')), '')
-            records.append(item(a.text(), safe_url(a.attrs.get('href', '')), '公司营业部',
-                                [['公司信息', ' · '.join(flags)], ['地址', address.replace('公司地址：', '')]]))
     elif key == 'articles':
         for row in root.find(cls='post-info'):
             a = first(first(row.find('h2')).find('a'))
             stamp = first(row.find('time')).attrs.get('datetime', '')
             records.append(item(a.text(), safe_url(a.attrs.get('href', '')), '期货资料', [], stamp))
-    elif key == 'software':
-        for row in root.find(cls='gs_addr'):
-            a = first(first(row.find(cls='gongsiname')).find('a'))
-            fields = []
-            for n in row.children:
-                if isinstance(n, Node) and '：' in n.text() and not n.find('h3'):
-                    label, value = n.text().split('：', 1)
-                    if label in ('期货公司', '所属分类', '界面语言', '运行环境'):
-                        fields.append([label, value])
-            group = next((v for k, v in fields if k == '所属分类'), '期货软件')
-            records.append(item(a.text(), safe_url(a.attrs.get('href', '')), group, fields))
     records = list({r['id']: r for r in records if r['title'] and r['url']}.values())
     if not records:
         raise ValueError('来源未返回可识别内容，本次未覆盖缓存')
     if len(records) > 15000:
         raise ValueError('来源记录超出安全上限')
     return {'items': records, 'columns': columns, 'source_url': url,
-            'scope': '来源当前页面；更多内容请查看原站' if key in ('companies', 'articles', 'software') else
+            'scope': '来源当前页面；更多内容请查看原站' if key == 'articles' else
                      '来源费用原值（元或万分之），参考价格非实时行情',
             'updated_at': now()}
 
@@ -216,7 +199,12 @@ class Cache:
             for path in self.directory.glob('*.json'):
                 try:
                     saved = json.loads(path.read_text(encoding='utf-8'))
-                    self.data[saved['key']] = saved['snapshot']
+                    key = saved['key']
+                    # 磁盘缓存比代码活得久（本平台跨重部署保留），所以这里要过滤：
+                    # 已下线分类留下的旧文件不再装载。option:<品种代码> 是动态键，必须放行。
+                    if key not in SOURCES and not key.startswith('option:'):
+                        continue
+                    self.data[key] = saved['snapshot']
                 except (OSError, ValueError, KeyError):
                     continue
         except OSError:

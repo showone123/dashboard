@@ -1,4 +1,5 @@
 """Offline regressions for last-good data, bounded refresh and existing routing."""
+import hashlib
 import importlib.util
 import json
 import sys
@@ -13,7 +14,7 @@ from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'build'))
-from futures_service import Cache, parse_page, safe_url, FUTURE_COLUMNS
+from futures_service import Cache, parse_page, safe_url, SOURCES, FUTURE_COLUMNS
 
 
 def table(price='10', extra=''):
@@ -37,14 +38,25 @@ class ParserTests(unittest.TestCase):
     def test_links_are_restricted(self):
         for url in ['javascript:alert(1)', 'https://evil.test', '//evil.test/x', 'http://www.9qihuo.com@evil.test']:
             self.assertEqual(safe_url(url), '')
-        self.assertEqual(safe_url('/gongsi'), 'https://www.9qihuo.com/gongsi')
+        self.assertEqual(safe_url('/fenlei/ziliao'), 'https://www.9qihuo.com/fenlei/ziliao')
 
     def test_bootstrap_covers_all_categories(self):
         seed = json.loads((ROOT / 'build/futures_seed.json').read_text(encoding='utf-8'))
-        for key in ('futures', 'options', 'companies', 'articles', 'software', 'option:au_o'):
+        for key in ('futures', 'options', 'articles', 'option:au_o'):
             self.assertTrue(seed[key]['items'], key)
             self.assertTrue(seed[key]['updated_at'])
             self.assertEqual(len(seed[key]['items']), len({r['id'] for r in seed[key]['items']}))
+
+    def test_retired_categories_are_gone(self):
+        """「期货公司」「期货软件」已于 2026-09-18 下线：前端不再有标签、后端也不再抓。
+
+        两处必须同时干净，否则会出现「抓取白名单还在，没人访问却一直耗配额」：
+        抓取白名单、打包种子。接口层的 400 由 RoutingTests 覆盖。
+        """
+        self.assertEqual(['futures', 'options', 'articles'], list(SOURCES))
+        seed = json.loads((ROOT / 'build/futures_seed.json').read_text(encoding='utf-8'))
+        for key in ('companies', 'software'):
+            self.assertNotIn(key, seed, '打包种子仍带着已下线的分类：' + key)
 
 
 class CacheTests(unittest.TestCase):
@@ -92,10 +104,27 @@ class CacheTests(unittest.TestCase):
     def test_independent_categories_and_unknown_option(self):
         self.cache._update('futures')
         self.cache.fetcher = lambda _: '<h1>blocked</h1>'
-        self.cache._update('companies')
+        self.cache._update('articles')
         self.assertTrue(self.cache.snapshot('futures')['items'])
         with self.assertRaises(ValueError):
             self.cache.refresh('option:../../secret', True)
+
+    def test_retired_keys_on_disk_are_not_reloaded(self):
+        """磁盘缓存比代码活得久（本平台跨重部署保留），已下线分类的旧文件不能被重新装载。
+
+        `option:<品种代码>` 是动态键，必须照常放行 —— 过滤条件写错会把期权明细全丢。
+        """
+        def put(key):
+            path = Path(self.tmp.name) / (hashlib.sha256(key.encode()).hexdigest() + '.json')
+            path.write_text(json.dumps({'key': key, 'snapshot': {'items': [{'id': 'x'}], 'columns': []}}),
+                            encoding='utf-8')
+        put('companies')
+        put('option:au_o')
+        reloaded = Cache(self.tmp.name)
+        try:
+            self.assertEqual(['option:au_o'], sorted(reloaded.data))
+        finally:
+            reloaded.pool.shutdown()
 
     def test_disk_failure_preserves_previous_snapshot(self):
         self.cache._update('futures')
@@ -141,6 +170,22 @@ class RoutingTests(unittest.TestCase):
             with self.assertRaises(HTTPError) as err:
                 urlopen(req)
             self.assertEqual(err.exception.code, code)
+
+    def test_retired_categories_are_rejected_by_the_api(self):
+        """下线必须落到接口层，而不是只藏掉前端标签。
+
+        只删前端标签的话，老页面（用户浏览器里缓存的前端）或收藏过的旧链接仍能打到接口；
+        后端不认识这两个 key 就必须 400，不能悄悄触发抓取。
+        """
+        for key in ('companies', 'software'):
+            with self.assertRaises(HTTPError) as err:
+                urlopen(self.url + '/api/futures?category=' + key)
+            self.assertEqual(err.exception.code, 400, key)
+            req = Request(self.url + '/api/futures/refresh?category=' + key, method='POST',
+                          headers={'X-FluxDesk-Request': '1'})
+            with self.assertRaises(HTTPError) as err:
+                urlopen(req)
+            self.assertEqual(err.exception.code, 400, key)
 
     def test_same_origin_refresh_is_allowed(self):
         """正向用例：真实浏览器走的就是这条路（必带 Origin）。

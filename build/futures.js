@@ -1,7 +1,11 @@
 /* Independent public-data workspace. No changes to cloud auth or customer data. */
 (function () {
   'use strict';
-  var categories = [['futures', '期货手续费'], ['options', '期权手续费'], ['companies', '期货公司'], ['articles', '期货资料'], ['software', '期货软件']];
+  /* 分类必须与 build/futures_service.py 的 SOURCES 完全一致（verify.py §9 会比对）。
+     2026-09-18 按用户要求下线公司类（/gongsi）与软件类（/ruanjian）两个分类：
+     前端标签与后端抓取白名单一并移除。注释里刻意不写那两个分类名，
+     好让"产物里搜不到已下线分类"成为一条干净的验收判据。 */
+  var categories = [['futures', '期货手续费'], ['options', '期权手续费'], ['articles', '期货资料']];
   var root, user = '', key = 'futures', category = 'futures', data = null, favorites = {}, memory = {};
   var query = '', group = '', onlyFavorites = false, page = 1, active = false, timer, generation = 0, loading = false, notice = '';
   var PAGE_SIZE = 30;
@@ -16,9 +20,9 @@
   function cached(k) { var d = memory[k] || read('fluxdesk_futures_snapshot_v1:' + k, null); return valid(d) ? d : null; }
 
   function shell() {
-    root.innerHTML = '<div class="ft-heading"><div><div class="ft-eyebrow">FUTURES RESOURCE DESK</div><h1>期货工具箱</h1><p>手续费、机构与资料，集中查询与收藏。</p></div><button type="button" class="btn primary" data-ft="refresh">↻ 立即刷新</button></div>' +
+    root.innerHTML = '<div class="ft-heading"><div><div class="ft-eyebrow">FUTURES RESOURCE DESK</div><h1>期货工具箱</h1><p>手续费与资料，集中查询与收藏。</p></div><button type="button" class="btn primary" data-ft="refresh">↻ 立即刷新</button></div>' +
       '<div class="ft-tabs" role="group" aria-label="期货工具分类">' + categories.map(function (c) { return '<button type="button" data-category="' + c[0] + '" aria-pressed="false">' + c[1] + '</button>'; }).join('') + '</div>' +
-      '<div class="ft-toolbar"><label class="ft-search">⌕ <input data-ft="search" type="search" placeholder="搜索品种、合约、公司或标题" aria-label="搜索期货工具内容"></label><select data-ft="group" aria-label="按交易所或分类筛选"><option value="">全部分类</option></select><button class="btn" data-ft="favorites" type="button" aria-pressed="false">☆ 只看收藏</button></div>' +
+      '<div class="ft-toolbar"><label class="ft-search">⌕ <input data-ft="search" type="search" placeholder="搜索品种、合约或标题" aria-label="搜索期货工具内容"></label><select data-ft="group" aria-label="按交易所或分类筛选"><option value="">全部分类</option></select><button class="btn" data-ft="favorites" type="button" aria-pressed="false">☆ 只看收藏</button></div>' +
       '<div class="ft-meta"><span data-ft="count"></span><span data-ft="time"></span><a data-ft="source" target="_blank" rel="noopener noreferrer">查看来源 ↗</a></div>' +
       '<div class="ft-status" data-ft="status" role="status" aria-live="polite"></div><div data-ft="back"></div><div data-ft="content"></div>' +
       '<div class="ft-pagination"><button class="btn sm" type="button" data-ft="prev">上一页</button><span data-ft="pages"></span><button class="btn sm" type="button" data-ft="next">下一页</button></div>' +
@@ -79,7 +83,7 @@
     var shown = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
     el('count').textContent = filtered.length + ' 条结果 / ' + items.length + ' 条已缓存';
     el('time').textContent = '最后成功更新：' + timeLabel(data && data.updated_at);
-    el('source').href = safeLink(data && data.source_url || 'https://www.9qihuo.com/' + ({futures:'qihuoshouxufei',options:'qiquanshouxufei',companies:'gongsi',articles:'fenlei/ziliao',software:'ruanjian'}[category]));
+    el('source').href = safeLink(data && data.source_url || 'https://www.9qihuo.com/' + ({futures:'qihuoshouxufei',options:'qiquanshouxufei',articles:'fenlei/ziliao'}[category]));
     var refreshing = loading || (data && data.refreshing);
     el('refresh').disabled = !!refreshing;
     el('refresh').textContent = refreshing ? '↻ 正在刷新…' : '↻ 立即刷新';
