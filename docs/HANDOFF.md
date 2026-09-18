@@ -165,7 +165,7 @@ python verify.py
 | 改权限门禁 | `build/app.js` 的 410–520 段（`evalGrant` / `renderGate`） | 状态取值 `pending/active/suspended/expired` 与 DB 对应，改一边要改另一边 |
 | 改通知功能 | `build/app.js` 的 1035–1424 段 | 先读 README §3.4：`seen` 与 `popped` 是两套语义，`#nMore` 的两处修复缺一不可 |
 | 加业务数据接口 | **不是改代码，是加表** → `migrations/00N_*.sql` + `contract.json` | 默认 `server.py` **不写路由**（它只做静态托管 + 兜底）。2026-09-18 起有**窄例外**：公开数据的只读/缓存类接口可以写进 `server.py`，见下一行 |
-| 加资源库 / 工具页面（如期货工具箱） | 前端 `build/futures.js` + `futures.css`（挂进 `build/app.js` 的 tab），服务端在 `dist/server.py` 加**精确路由** | 属于**有意扩展服务端契约 → 走 §5**。照 `docs/FUTURES.md` 的成套做法：只读缓存路由 + 非阻塞刷新路由（要自定义头 `X-FluxDesk-Request: 1` + 同源 Origin 校验、不发跨域许可）+ 抓取失败保留旧数据 + 打包快照兜底。同步更新 `contract.json` 的 `dist/server.py` sha256/字节数 |
+| 加资源库 / 工具页面（如期货工具箱） | 前端 `build/futures.js` + `futures.css`（挂进 `build/app.js` 的 tab），服务端在 `dist/server.py` 加**精确路由** | 属于**有意扩展服务端契约 → 走 §5**。照 `docs/FUTURES.md` 的成套做法：只读缓存路由 + 非阻塞刷新路由（**只要**自定义头 `X-FluxDesk-Request: 1`，**绝不要拿 `Origin` 比对 `Host`**、不发跨域许可；2026-09-18 曾因这个写法让真实浏览器 100% 403，见 `docs/DEPLOY.md` 的 server.py 变更记录）+ 抓取失败保留旧数据 + 打包快照兜底。同步更新 `contract.json` 的 `dist/server.py` sha256/字节数 |
 | 改部署服务器行为 | `dist/server.py` | 高风险，改完要同步 `contract.json` 的 sha256 |
 | 改对外 API 地址 | `build/app.js` 的 `PUBLIC_CONFIG` | **等于换环境**。改了会连到别的云服务实例，`verify.py` 会拦 |
 
