@@ -29,7 +29,7 @@ TPL = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>FluxDesk · 数据工作站</title>
 <meta name="description" content="FluxDesk 数据工作站：上传业务数据，集中查看专业看板、历史记录与风险日志。"/>
-<link rel="icon" type="image/png" href="assets/fluxdesk-companion.png"/>
+<link rel="icon" type="image/png" href="/assets/fluxdesk-companion.png"/>
 <style id="wbTheme">
 __THEME__
 </style>
@@ -43,7 +43,7 @@ __APPCSS__
 <div class="auth-wrap" id="viewAuth">
   <div class="auth-card">
     <div class="auth-head">
-      <img class="brand-companion auth-companion" src="assets/fluxdesk-companion.png" alt=""/>
+      <img class="brand-companion auth-companion" src="/assets/fluxdesk-companion.png" alt=""/>
       <div class="brand-wordmark">Flux<span>Desk</span></div>
     </div>
     <div class="auth-desc">
@@ -77,7 +77,7 @@ __APPCSS__
 <div class="hidden" id="viewApp">
   <header class="appbar">
     <div class="brand">
-      <img class="brand-companion" src="assets/fluxdesk-companion.png" alt=""/>
+      <img class="brand-companion" src="/assets/fluxdesk-companion.png" alt=""/>
       <div class="brand-wordmark">Flux<span>Desk</span></div>
       <div class="sub" id="dataSource">示例数据（铜）</div>
     </div>
