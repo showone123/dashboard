@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """组装单文件应用 index.html：CDN SDK + theme.css + app.css + render.js + seed + app.js"""
-import json, os
+import json, os, shutil
 
 BUILD = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(BUILD)
@@ -27,9 +27,9 @@ TPL = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>铜数据看板 · 订阅版</title>
-<meta name="description" content="数据看板订阅服务：客户上传数据，云端渲染成专业看板。"/>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23f0b429'/%3E%3Ctext x='32' y='44' font-family='Arial,Helvetica,sans-serif' font-size='34' font-weight='700' fill='%23151a22' text-anchor='middle'%3ECu%3C/text%3E%3C/svg%3E"/>
+<title>FluxDesk · 数据工作站</title>
+<meta name="description" content="FluxDesk 数据工作站：上传业务数据，集中查看专业看板、历史记录与风险日志。"/>
+<link rel="icon" type="image/png" href="assets/fluxdesk-companion.png"/>
 <style id="wbTheme">
 __THEME__
 </style>
@@ -43,11 +43,8 @@ __APPCSS__
 <div class="auth-wrap" id="viewAuth">
   <div class="auth-card">
     <div class="auth-head">
-      <div class="logo-dot">Cu</div>
-      <div>
-        <div class="ttl">数据看板订阅服务</div>
-        <div class="sub">DATA DASHBOARD · SUBSCRIPTION</div>
-      </div>
+      <img class="brand-companion auth-companion" src="assets/fluxdesk-companion.png" alt=""/>
+      <div class="brand-wordmark">Flux<span>Desk</span></div>
     </div>
     <div class="auth-desc">
       上传你的数据文件，云端自动渲染成专业看板。<br/>
@@ -80,11 +77,9 @@ __APPCSS__
 <div class="hidden" id="viewApp">
   <header class="appbar">
     <div class="brand">
-      <div class="logo-dot">Cu</div>
-      <div>
-        <div class="t">数据看板<span class="sep">|</span>订阅版</div>
-        <div class="sub" id="dataSource">示例数据（铜）</div>
-      </div>
+      <img class="brand-companion" src="assets/fluxdesk-companion.png" alt=""/>
+      <div class="brand-wordmark">Flux<span>Desk</span></div>
+      <div class="sub" id="dataSource">示例数据（铜）</div>
     </div>
     <nav class="app-tabs">
       <button class="app-tab active" data-tab="dash" type="button">数据看板</button>
@@ -471,4 +466,9 @@ dist_dest = os.path.join(ROOT, "dist", "index.html")
 os.makedirs(os.path.dirname(dist_dest), exist_ok=True)
 with open(dist_dest, "w", encoding="utf-8") as f:
     f.write(out)
+assets_src = os.path.join(ROOT, "assets")
+assets_dest = os.path.join(ROOT, "dist", "assets")
+os.makedirs(assets_dest, exist_ok=True)
+for asset_name in ("fluxdesk-companion.png",):
+    shutil.copy2(os.path.join(assets_src, asset_name), os.path.join(assets_dest, asset_name))
 print("saved:", dest, "and", dist_dest, len(out), "chars")

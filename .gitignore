@@ -13,6 +13,7 @@
 #   dist/index.html 是部署产物，同样不提交。
 /index.html
 /dist/index.html
+/dist/assets/
 index.html.vendor.html
 /dist/index.html.vendor.html
 
@@ -35,6 +36,7 @@ outputs/*
 !outputs/铜期货源数据_20260915.xlsx
 *.png
 *.jpg
+!assets/fluxdesk-companion.png
 
 # Python
 __pycache__/
