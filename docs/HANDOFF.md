@@ -17,6 +17,12 @@ Codex 改源码 → push 到 GitHub → github_sync.py --pull/--diff/--apply →
 **唯一纪律：`verify.py` 必须绿。** 它在没有类型系统、没有 linter、没有 CI 的单文件项目里，
 是唯一能拦住"静默破坏对外契约"的关卡。
 
+> **反向也通了（2026-09-18）**：WorkBuddy 侧现在也持有 token，可以用 `python github_sync.py --push` 把本地改动（例如文档）推回仓库
+> —— 用在 Codex 额度用尽、但改动已在本地验证过的时候。
+> 注意 `--push` **自己会先跑一遍门禁**（输出 `✅ 门禁通过` 才提交）；推完做自证三连：
+> `--pull --api` → `--diff`（**看不到"内容不同"这一段**才算逐字节一致）→ 抽关键文件做 sha256 比对，
+> 并确认远端新 commit 的**父提交是原 HEAD**（正确快进）。
+>
 > 代码怎么从 GitHub 取回来，见 **`docs/GITHUB_SYNC.md`**。
 > 要点：本机 GitHub 可达性**间歇性抖动**，别用 `git clone https://...`；
 > 用 `python github_sync.py --pull`（默认走 `api.github.com`，实测最稳）或 WorkBuddy 的 GitHub 连接器。
@@ -34,6 +40,8 @@ Codex 改源码 → push 到 GitHub → github_sync.py --pull/--diff/--apply →
 | `build/theme.css` | 设计变量（配色、字体、间距） |
 | `build/render.js` | 看板渲染 |
 | `build/exporter.js` | 导出引擎（单文件 HTML / PNG 长图） |
+| `build/futures.js` + `build/futures.css` | 期货工具箱前端（二级分类标签页） |
+| `build/futures_service.py` + `build/futures_seed.json` | 期货工具箱抓取服务与打包快照 |
 | `build/copper_data.py` + `build/copper_data.json` | 示例数据 |
 | `docs/*` | 文档 |
 | `migrations/00N_*.sql`（新增） | 数据库增量变更 |
@@ -42,7 +50,7 @@ Codex 改源码 → push 到 GitHub → github_sync.py --pull/--diff/--apply →
 
 | 文件 | 为什么 |
 |---|---|
-| `dist/server.py` | 决定坏链接兜底与 `/.cloud` 不被遮蔽两个线上行为。`verify.py` 用 sha256 强校验 |
+| `dist/server.py` | 决定坏链接兜底与 `/.cloud` 不被遮蔽两个线上行为。`verify.py` 用 sha256 强校验。<br>**2026-09-18 例外**：期货工具箱**有意**扩展了它（新增 `GET /api/futures`、`POST /api/futures/refresh` 两条精确路由）。这类例外必须像那次一样**写进 `docs/FUTURES.md` 并同步 `contract.json` 的 sha256/字节数**，不能默默改。 |
 | `migrations/001_init.sql` | 已应用的初始迁移。改了会让"老环境"与"新环境"分叉。要改结构就**新增** `00N_*.sql` |
 | `build/parser.js` 的 `SHEETS` 列表 | **对客户的接口**。改动 = 已交付客户的 Excel 模板批量失效 |
 | `build/risk_parser.js` 的表头别名 | 实控人风险日志接口。必填含义是资金账号、客户姓名、登录 MAC 地址；可增加别名，但不要删除已支持名称 |
@@ -156,7 +164,8 @@ python verify.py
 | 改登录 / 注册流程 | `build/app.js` 的 98–410 段 | 先读 `docs/API.md` §3.1 的平台账号模型，别做纯邮箱+密码注册 |
 | 改权限门禁 | `build/app.js` 的 410–520 段（`evalGrant` / `renderGate`） | 状态取值 `pending/active/suspended/expired` 与 DB 对应，改一边要改另一边 |
 | 改通知功能 | `build/app.js` 的 1035–1424 段 | 先读 README §3.4：`seen` 与 `popped` 是两套语义，`#nMore` 的两处修复缺一不可 |
-| 加业务数据接口 | **不是改代码，是加表** → `migrations/00N_*.sql` + `contract.json` | `server.py` 不是后端，不要往里写路由 |
+| 加业务数据接口 | **不是改代码，是加表** → `migrations/00N_*.sql` + `contract.json` | 默认 `server.py` **不写路由**（它只做静态托管 + 兜底）。2026-09-18 起有**窄例外**：公开数据的只读/缓存类接口可以写进 `server.py`，见下一行 |
+| 加资源库 / 工具页面（如期货工具箱） | 前端 `build/futures.js` + `futures.css`（挂进 `build/app.js` 的 tab），服务端在 `dist/server.py` 加**精确路由** | 属于**有意扩展服务端契约 → 走 §5**。照 `docs/FUTURES.md` 的成套做法：只读缓存路由 + 非阻塞刷新路由（要自定义头 `X-FluxDesk-Request: 1` + 同源 Origin 校验、不发跨域许可）+ 抓取失败保留旧数据 + 打包快照兜底。同步更新 `contract.json` 的 `dist/server.py` sha256/字节数 |
 | 改部署服务器行为 | `dist/server.py` | 高风险，改完要同步 `contract.json` 的 sha256 |
 | 改对外 API 地址 | `build/app.js` 的 `PUBLIC_CONFIG` | **等于换环境**。改了会连到别的云服务实例，`verify.py` 会拦 |
 
@@ -183,6 +192,8 @@ python verify.py
 - [ ] 说「覆盖上线」
 - [ ] 按 `docs/DEPLOY.md` §4 跑验收清单（含逐字节 `cmp`）
 - [ ] 归档一份线上产物到 `outputs/发布归档_<说明>_<日期>.html`
+- [ ] 若本次由 WorkBuddy 侧推送：`--push` 后跑 `--pull --api` + `--diff`，确认**无"内容不同"**，且远端 commit 的父提交 = 原 HEAD
+- [ ] 纯文档改动**不需要重新部署**，但仍 `curl` 一次确认线上 `dist/index.html` 的 sha256 与本地一致，才能说"线上未受影响"
 
 ---
 
