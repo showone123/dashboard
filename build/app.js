@@ -1795,6 +1795,12 @@
     syncThemeControls();
     createLoginParticles();
     createAmbientParticles();
+    $('btnSidebarToggle').addEventListener('click', function () {
+      var collapsed = $('viewApp').classList.toggle('sidebar-collapsed');
+      this.setAttribute('aria-label', collapsed ? '展开侧边栏' : '收起侧边栏');
+      this.setAttribute('title', collapsed ? '展开侧边栏' : '收起侧边栏');
+      setTimeout(function () { window.dispatchEvent(new Event('resize')); }, 240);
+    });
     document.querySelectorAll('.app-tab').forEach(function (b) {
       b.addEventListener('click', function () { switchTab(b.getAttribute('data-tab')); });
     });

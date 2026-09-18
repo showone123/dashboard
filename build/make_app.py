@@ -100,22 +100,23 @@ __APPCSS__
     <div class="workspace-brand">
       <img class="brand-companion" src="/assets/fluxdesk-companion.png" alt=""/>
       <div class="brand-wordmark">Flux<span>Desk</span></div>
+      <button class="sidebar-toggle" id="btnSidebarToggle" type="button" aria-label="收起侧边栏" title="收起侧边栏">‹</button>
     </div>
     <div class="workspace-switch"><div><b>风险与行情工作站</b><small id="dataSource">示例数据（铜）</small></div><span>⌄</span></div>
     <div class="workspace-nav-label">工作台</div>
     <nav class="workspace-nav">
-      <button class="app-tab active" data-tab="dash" type="button"><span class="nav-glyph">▦</span>总览</button>
-      <button class="app-tab" data-tab="market" type="button"><span class="nav-glyph">⌁</span>市场看板</button>
-      <button class="app-tab" data-tab="upload" type="button"><span class="nav-glyph">⇧</span>数据中心</button>
+      <button class="app-tab active" data-tab="dash" title="总览" type="button"><span class="nav-glyph">▦</span><span class="nav-text">总览</span></button>
+      <button class="app-tab" data-tab="market" title="市场看板" type="button"><span class="nav-glyph">⌁</span><span class="nav-text">市场看板</span></button>
+      <button class="app-tab" data-tab="upload" title="数据中心" type="button"><span class="nav-glyph">⇧</span><span class="nav-text">数据中心</span></button>
     </nav>
     <div class="workspace-nav-label">风险管理</div>
     <nav class="workspace-nav">
-      <button class="app-tab" data-tab="risk" type="button"><span class="nav-glyph">◇</span>实控人风险日志<span class="nav-badge" id="sideRiskBadge">—</span></button>
-      <button class="app-tab" data-tab="history" type="button"><span class="nav-glyph">▤</span>历史记录</button>
+      <button class="app-tab" data-tab="risk" title="实控人风险日志" type="button"><span class="nav-glyph">◇</span><span class="nav-text">实控人风险日志</span><span class="nav-badge" id="sideRiskBadge">—</span></button>
+      <button class="app-tab" data-tab="history" title="历史记录" type="button"><span class="nav-glyph">▤</span><span class="nav-text">历史记录</span></button>
     </nav>
     <div class="workspace-nav-label">系统</div>
     <nav class="workspace-nav">
-      <button class="app-tab hidden" data-tab="admin" id="tabAdmin" type="button"><span class="nav-glyph">⚙</span>运营台<span class="dotbadge hidden" id="adminBadge">0</span></button>
+      <button class="app-tab hidden" data-tab="admin" title="运营台" id="tabAdmin" type="button"><span class="nav-glyph">⚙</span><span class="nav-text">运营台</span><span class="dotbadge hidden" id="adminBadge">0</span></button>
     </nav>
     <div class="workspace-side-foot">
       <div class="workspace-avatar">FD</div><div><b id="sideUser">FluxDesk 用户</b><span id="sidePlan">已开通</span></div>

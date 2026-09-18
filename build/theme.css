@@ -9,6 +9,7 @@
   --down:#00c853; --down2:#1fe074;      /* 跌 → 绿 */
   --gray:#9e9e9e; --blue:#3d7fff; --cyan:#26c6da;
   --mono:'SF Mono','JetBrains Mono','Cascadia Code','Roboto Mono',Menlo,Consolas,monospace;
+  --number:'Bahnschrift','DIN Alternate','Segoe UI Variable','Segoe UI',Arial,sans-serif;
   --sans:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
 }
 *{box-sizing:border-box;margin:0;padding:0}
@@ -117,7 +118,7 @@ td.l,th.l{text-align:left}
 td.c,th.c{text-align:center}
 .up{color:var(--up2)!important} .down{color:var(--down2)!important} .neu{color:var(--gray)!important}
 .gl{color:var(--gold2)!important} .bl{color:#5b9dff!important} .dim{color:var(--dim)!important} .dim2{color:var(--dim2)!important}
-.num{font-variant-numeric:tabular-nums}
+.num{font-family:var(--number);font-variant-numeric:tabular-nums lining-nums}
 .badge{display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;letter-spacing:.5px;border:1px solid}
 .b-green{color:var(--down2);border-color:rgba(0,200,83,.4);background:rgba(0,200,83,.08)}
 .b-red{color:var(--up2);border-color:rgba(255,23,68,.4);background:rgba(255,23,68,.08)}
