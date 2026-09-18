@@ -61,3 +61,8 @@ desktop.ini
 #  · vendor/ **要**提交 —— 它是锁定的依赖副本，是离线构建的依据。
 #  · deps.lock.json / contract.json **要**提交 —— 它们是门禁的基准。
 #  · migrations/ **要**提交。
+
+# Generated futures runtime and private on-disk cache
+/dist/futures_service.py
+/dist/futures_seed.json
+/.futures-cache/

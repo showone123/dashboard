@@ -54,11 +54,18 @@
     "send_cooldown_ms": 60000,
     "ls_keys": { "seen": "cu_notif_seen_at", "popped": "cu_notif_popped" },
 
-    "_note_server": "部署用静态服务器。它决定「坏链接兜底」与「不遮蔽 /.cloud 网关」两个线上行为，改动风险高。",
-    "server_py_sha256": "af5d9d914456ec7d74e3ba3769a958f009a996d317eb8209ae21e41f7992207c",
-    "server_py_bytes": 3627,
+    "_note_server": "2026-09-18：为期货工具箱增加同进程固定来源抓取/缓存 API；保留 PORT、监听地址、/.cloud 排除与 SPA 兜底。源码由 build/server.py 生成，变更原因与部署步骤见 docs/FUTURES.md。",
+    "server_py_sha256": "c996ffc91d155ecdcfc10ea0ba7dc287b765e81ece9414ef01f14d2c929ef43d",
+    "server_py_bytes": 5176,
     "server_must_block": ["/.cloud"],
-    "server_must_fallback_to_index": true
+    "server_must_fallback_to_index": true,
+    "futures_workspace": {
+      "favorites_key_prefix": "fluxdesk_futures_favorites_v1:",
+      "snapshot_key_prefix": "fluxdesk_futures_snapshot_v1:",
+      "refresh_cooldown_seconds": 60,
+      "cache_ttl_seconds": 21600,
+      "public_data_only": true
+    }
   },
 
   "advisory_baseline_hashes": {

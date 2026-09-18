@@ -709,3 +709,7 @@ curl -s -o /dev/null -w "%{http_code}\n" https://.../.cloud/database/rest/notifi
 | **`migrations/README.md`** | 要加迁移时。执行方式（`db_exec_sql` 单条语句）、编号约定、6 条注意事项 |
 | **`contract.json`** | 想看"哪些是不能动的对外承诺"时（`verify.py` 校验的原始依据） |
 | 原工作区的 skill 文档（不在本包内）：`~/.workbuddy/skills/workbuddy-cloud-subscription-app/SKILL.md` | 记录了「用云服务做订阅制 Web 应用」这套方法的完整踩坑笔记（建表/RLS/GRANT 三件套顺序、`x-wb-webapp-access-key` 头名、假 SDK 测试法、发布参数、源码交接流程等）。如果 Codex 侧需要，可以一并提供 |
+
+## 期货工具箱（2026-09-18）
+
+工作台新增九期网五类资源子页，支持立即刷新、筛选、按账号本地收藏、来源链接和最后成功更新时间。新增同进程 Python 缓存接口；网络失败保留旧数据，不修改既有业务数据。数据范围、服务器契约变更、缓存持久化配置及 WorkBuddy 发布步骤见 [docs/FUTURES.md](docs/FUTURES.md)。

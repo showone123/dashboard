@@ -613,6 +613,25 @@ def main(argv):
     check_contract()
     check_dist_sync()
     check_sync_channel()
+    sec("9. 期货工具箱缓存与路由回归")
+    for name in ("server.py", "futures_service.py", "futures_seed.json"):
+        source = os.path.join(HERE, "build", name)
+        target = os.path.join(HERE, "dist", name)
+        if os.path.isfile(target) and open(source, "rb").read() == open(target, "rb").read():
+            ok("期货工具箱运行文件同步：" + name)
+        else:
+            bad("期货工具箱运行文件未同步：" + name)
+    code, output = run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_futures.py", "-v"])
+    if code == 0:
+        ok("期货工具箱缓存、解析和路由回归通过")
+    else:
+        bad("期货工具箱回归失败", output)
+    fc = json.load(open(os.path.join(HERE, "contract.json"), encoding="utf-8"))["frozen_contracts"]["futures_workspace"]
+    js = open(os.path.join(HERE, "build", "futures.js"), encoding="utf-8").read()
+    if fc["favorites_key_prefix"] in js and fc["snapshot_key_prefix"] in js:
+        ok("期货工具箱新增 localStorage 键契约一致")
+    else:
+        bad("期货工具箱 localStorage 键契约被改动")
 
     sec("结论")
     print("  通过 %d 项 / 警告 %d 项 / 失败 %d 项" % (PASSES, len(WARNS), len(FAILS)))

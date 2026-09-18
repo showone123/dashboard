@@ -12,12 +12,12 @@ def rd(n):
 
 
 theme = rd("theme.css")
-appcss = rd("app.css")
+appcss = rd("app.css") + "\n" + rd("futures.css")
 render = rd("render.js")
 parser = rd("parser.js")
 risk_parser = rd("risk_parser.js")
 exporter = rd("exporter.js")
-appjs = rd("app.js")
+appjs = rd("futures.js") + "\n" + rd("app.js")
 seed_raw = rd("copper_data.json")
 # 内嵌 JSON 里不能出现 </script>
 seed_raw = seed_raw.replace("<", "\\u003c")
@@ -108,6 +108,7 @@ __APPCSS__
       <button class="app-tab active" data-tab="dash" title="总览" type="button"><span class="nav-glyph">▦</span><span class="nav-text">总览</span></button>
       <button class="app-tab" data-tab="market" title="市场看板" type="button"><span class="nav-glyph">⌁</span><span class="nav-text">市场看板</span></button>
       <button class="app-tab" data-tab="upload" title="数据中心" type="button"><span class="nav-glyph">⇧</span><span class="nav-text">数据中心</span></button>
+      <button class="app-tab" data-tab="futures" title="期货工具箱" type="button"><span class="nav-glyph">▥</span><span class="nav-text">期货工具箱</span></button>
     </nav>
     <div class="workspace-nav-label">风险管理</div>
     <nav class="workspace-nav">
@@ -178,6 +179,8 @@ __APPCSS__
       <span class="ef-ic">⤓</span><span>导出成果</span>
     </button>
   </section>
+
+  <section class="panel" id="panelFutures"><div id="futuresRoot" class="ft-workspace"></div></section>
 
   <!-- 上传 -->
   <section class="panel" id="panelUpload">
@@ -535,3 +538,7 @@ os.makedirs(assets_dest, exist_ok=True)
 for asset_name in ("fluxdesk-companion.png",):
     shutil.copy2(os.path.join(assets_src, asset_name), os.path.join(assets_dest, asset_name))
 print("saved:", dest, "and", dist_dest, len(out), "chars")
+
+# Runtime sources and public bootstrap snapshots are copied for WorkBuddy.
+for name in ("server.py", "futures_service.py", "futures_seed.json"):
+    shutil.copyfile(os.path.join(BUILD, name), os.path.join(ROOT, "dist", name))
