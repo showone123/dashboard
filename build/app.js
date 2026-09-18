@@ -759,14 +759,15 @@
     closeNotifs();
     var was = curTab;
     curTab = name;
+    var panelName = name === 'risk-history' ? 'risk' : name;
     ['dash', 'market', 'upload', 'history', 'risk', 'admin', 'futures'].forEach(function (t) {
       var p = $('panel' + t.charAt(0).toUpperCase() + t.slice(1));
-      if (p) p.classList.toggle('active', t === name);
+      if (p) p.classList.toggle('active', t === panelName);
     });
     document.querySelectorAll('.app-tab').forEach(function (b) {
       b.classList.toggle('active', b.getAttribute('data-tab') === name);
     });
-    var titles = { dash: '总览', market: '市场看板', upload: '数据中心', history: '历史记录', risk: '实控人风险日志', admin: '运营台', futures: '期货工具箱' };
+    var titles = { dash: '总览', market: '数据看板', upload: '数据看板 / 数据中心', history: '数据看板 / 历史数据', risk: '实控人风险日志', 'risk-history': '实控人风险日志 / 历史数据', admin: '运营台', futures: '期货工具箱' };
     if ($('workspaceCrumb')) $('workspaceCrumb').textContent = titles[name] || '工作台';
     if (was && was !== name) window.scrollTo(0, 0);
     if (name === 'dash') {
@@ -787,10 +788,12 @@
     if (name === 'futures') FuturesDesk.open($('futuresRoot'), S.userId);
     else FuturesDesk.close();
     if (name === 'history') loadDatasets();
-    if (name === 'risk') loadDatasets().then(function () {
+    if (name === 'risk' || name === 'risk-history') loadDatasets().then(function () {
       if (S.riskData) return;
       var latest = (S.datasets || []).filter(isRiskDataset)[0];
-      if (latest) loadRiskDataset(latest.id, true);
+      if (latest) return loadRiskDataset(latest.id, true);
+    }).then(function () {
+      if (name === 'risk-history') $('riskHistorySection').scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
     if (name === 'admin') loadOperator();
   }
@@ -1143,7 +1146,7 @@
     $('riskHistBody').innerHTML = list.map(function (d, i) {
       return '<tr><td class="l">' + (i === 0 ? '<span class="chip good">当前</span> ' : '') + esc(d.name) + '</td>' +
         '<td class="num">' + fmtSize(d.size_bytes) + '</td><td class="l mono-small">' + esc(fmtTime(d.created_at)) + '</td>' +
-        '<td class="l"><div class="ops"><button class="btn sm ok" data-risk-load="' + d.id + '">载入筛选</button>' +
+        '<td class="l"><div class="ops"><button class="btn sm ok" data-risk-load="' + d.id + '">载入风险日志</button>' +
         '<button class="btn sm" data-risk-dl="' + d.id + '">下载原文件</button></div></td></tr>';
     }).join('');
     $('riskHistBody').querySelectorAll('[data-risk-load]').forEach(function (b) {

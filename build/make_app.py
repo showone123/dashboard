@@ -103,17 +103,20 @@ __APPCSS__
       <button class="sidebar-toggle" id="btnSidebarToggle" type="button" aria-label="收起侧边栏" title="收起侧边栏">‹</button>
     </div>
     <div class="workspace-switch"><div><b>风险与行情工作站</b><small id="dataSource">示例数据（铜）</small></div><span>⌄</span></div>
+    <nav class="workspace-nav workspace-home-nav">
+      <button class="app-tab active" data-tab="dash" title="总览" type="button"><span class="nav-glyph">▦</span><span class="nav-text">总览</span></button>
+    </nav>
     <div class="workspace-nav-label">工作台</div>
     <nav class="workspace-nav">
-      <button class="app-tab active" data-tab="dash" title="总览" type="button"><span class="nav-glyph">▦</span><span class="nav-text">总览</span></button>
-      <button class="app-tab" data-tab="market" title="市场看板" type="button"><span class="nav-glyph">⌁</span><span class="nav-text">市场看板</span></button>
-      <button class="app-tab" data-tab="upload" title="数据中心" type="button"><span class="nav-glyph">⇧</span><span class="nav-text">数据中心</span></button>
+      <button class="app-tab nav-parent" data-tab="market" title="数据看板" type="button"><span class="nav-glyph">⌁</span><span class="nav-text">数据看板</span></button>
+      <button class="app-tab nav-child" data-tab="upload" title="数据中心" type="button"><span class="nav-glyph">⇧</span><span class="nav-text">数据中心</span></button>
+      <button class="app-tab nav-child" data-tab="history" title="数据看板历史" type="button"><span class="nav-glyph">▤</span><span class="nav-text">历史数据</span></button>
       <button class="app-tab" data-tab="futures" title="期货工具箱" type="button"><span class="nav-glyph">▥</span><span class="nav-text">期货工具箱</span></button>
     </nav>
     <div class="workspace-nav-label">风险管理</div>
     <nav class="workspace-nav">
-      <button class="app-tab" data-tab="risk" title="实控人风险日志" type="button"><span class="nav-glyph">◇</span><span class="nav-text">实控人风险日志</span><span class="nav-badge" id="sideRiskBadge">—</span></button>
-      <button class="app-tab" data-tab="history" title="历史记录" type="button"><span class="nav-glyph">▤</span><span class="nav-text">历史记录</span></button>
+      <button class="app-tab nav-parent" data-tab="risk" title="实控人风险日志" type="button"><span class="nav-glyph">◇</span><span class="nav-text">实控人风险日志</span><span class="nav-badge" id="sideRiskBadge">—</span></button>
+      <button class="app-tab nav-child" data-tab="risk-history" title="风险日志历史" type="button"><span class="nav-glyph">▤</span><span class="nav-text">历史数据</span></button>
     </nav>
     <div class="workspace-nav-label">系统</div>
     <nav class="workspace-nav">
@@ -154,12 +157,12 @@ __APPCSS__
   <!-- 工作站总览 -->
   <section class="panel active" id="panelDash">
     <div class="overview-content">
-      <div class="overview-head"><div><h1>工作站总览</h1><div class="overview-status"><i></i><span>数据已同步</span><span>·</span><span id="overviewUpdated">等待数据</span></div></div><div class="overview-actions"><button class="btn" id="btnOverviewMarket" type="button">查看市场看板</button><button class="btn primary" id="btnOverviewExport" type="button">导出报告</button></div></div>
+      <div class="overview-head"><div><h1>工作站总览</h1><p>汇总数据看板与风险管理的关键变化</p><div class="overview-status"><i></i><span>数据已同步</span><span>·</span><span id="overviewUpdated">等待数据</span></div></div><div class="overview-actions"><button class="btn" id="btnOverviewMarket" type="button">进入数据看板</button><button class="btn primary" id="btnOverviewExport" type="button">导出报告</button></div></div>
       <section class="overview-metrics">
-        <article><div class="metric-label"><span>最新收盘</span><span id="ovContract">—</span></div><div class="metric-main"><b id="ovClose">—</b><em id="ovChange">—</em></div><svg class="metric-spark" id="ovSparkPrice" viewBox="0 0 180 30" preserveAspectRatio="none"></svg></article>
-        <article><div class="metric-label"><span>持仓量</span><span>手</span></div><div class="metric-main"><b id="ovOpenInterest">—</b><em id="ovOiChange">—</em></div><svg class="metric-spark" id="ovSparkOi" viewBox="0 0 180 30" preserveAspectRatio="none"></svg></article>
-        <article><div class="metric-label"><span>异常 MAC</span><span>当前版本</span></div><div class="metric-main"><b id="ovRiskMac">—</b><em class="risk" id="ovRiskHigh">未载入</em></div><div class="metric-foot" id="ovRiskSource">风险日志</div></article>
-        <article><div class="metric-label"><span>涉及资金账户</span><span>去重</span></div><div class="metric-main"><b id="ovRiskAccounts">—</b><em id="ovRiskSegments">—</em></div><div class="metric-foot">按资金账号前四位归类</div></article>
+        <article class="metric-market"><div class="metric-area">行情重点</div><div class="metric-label"><span>最新收盘</span><span id="ovContract">—</span></div><div class="metric-main"><b id="ovClose">—</b><em id="ovChange">—</em></div><svg class="metric-spark" id="ovSparkPrice" viewBox="0 0 180 30" preserveAspectRatio="none"></svg></article>
+        <article class="metric-market"><div class="metric-area">行情重点</div><div class="metric-label"><span>持仓量</span><span>手</span></div><div class="metric-main"><b id="ovOpenInterest">—</b><em id="ovOiChange">—</em></div><svg class="metric-spark" id="ovSparkOi" viewBox="0 0 180 30" preserveAspectRatio="none"></svg></article>
+        <article class="metric-risk"><div class="metric-area">风险重点</div><div class="metric-label"><span>异常 MAC</span><span>当前版本</span></div><div class="metric-main"><b id="ovRiskMac">—</b><em class="risk" id="ovRiskHigh">未载入</em></div><div class="metric-foot" id="ovRiskSource">风险日志</div></article>
+        <article class="metric-risk"><div class="metric-area">风险重点</div><div class="metric-label"><span>涉及资金账户</span><span>去重</span></div><div class="metric-main"><b id="ovRiskAccounts">—</b><em id="ovRiskSegments">—</em></div><div class="metric-foot">按资金账号前四位归类</div></article>
       </section>
       <section class="overview-grid">
         <article class="overview-card overview-market-card"><div class="overview-card-head"><div><b>价格与持仓联动</b><small id="ovMarketNote">行情数据</small></div><button class="mini-action" id="btnOverviewMarket2" type="button">打开完整看板</button></div><div class="overview-chart"><svg id="ovPriceChart" viewBox="0 0 760 250" preserveAspectRatio="none"></svg></div></article>
@@ -217,12 +220,12 @@ __APPCSS__
     </div>
   </section>
 
-  <!-- 历史 -->
+  <!-- 数据看板历史 -->
   <section class="panel" id="panelHistory">
     <div class="panel-pad">
       <div class="section">
         <div class="row-flex" style="justify-content:space-between">
-          <h3 style="margin:0">历史数据 <span class="mono-small" id="histCount"></span></h3>
+          <h3 style="margin:0">数据看板历史 <span class="mono-small" id="histCount"></span></h3>
           <div class="row-flex">
             <button class="btn sm" id="btnRefreshHist" type="button">刷新</button>
             <button class="btn sm primary" id="btnDownAll" type="button">下载全部</button>
@@ -309,7 +312,7 @@ __APPCSS__
         </div>
       </div>
 
-      <div class="section">
+      <div class="section" id="riskHistorySection">
         <div class="risk-title-row">
           <div><h3>历史版本 <span class="mono-small" id="riskHistCount"></span></h3><div class="hint">载入任一旧版本即可按相同条件重新筛选。</div></div>
         </div>
