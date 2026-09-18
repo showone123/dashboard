@@ -30,7 +30,7 @@ TPL = """<!DOCTYPE html>
 <title>FluxDesk · 数据工作站</title>
 <meta name="description" content="FluxDesk 数据工作站：上传业务数据，集中查看专业看板、历史记录与风险日志。"/>
 <link rel="icon" type="image/png" href="/assets/fluxdesk-companion.png"/>
-<script>document.documentElement.dataset.theme='light';</script>
+<script>document.documentElement.dataset.theme='dark';</script>
 <style id="wbTheme">
 __THEME__
 </style>
