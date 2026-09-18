@@ -44,7 +44,8 @@
    这个应用是通过云服务开通的，复用它才能保留域名与云服务 Origin。新建应用 = 换域名 = 登录全废。
 
 3. **上传的是 `dist/`，不是仓库根**。
-   `dist/` 里应该只有两样东西：`server.py` 和 `index.html`。
+   `dist/` 里应该是这五项：`server.py`、`index.html`、`assets/`（图片资源）、
+   `futures_service.py`、`futures_seed.json`。
    ⚠️ **不要把 `requirements.txt` / `.env.example` / `db/` / `migrations/` 复制进 `dist/`**：
    发布前有一道预检查，扫描依赖清单与 `.env*`，一旦出现数据库驱动包名
    （`pg` / `psycopg2` / `mysql2` / `mongoose` / `ioredis` …）或指向 localhost 的连接串，
@@ -60,6 +61,31 @@
   登录接口就废了。
 
 确实需要改的话：改代码 + 改 `contract.json` 里的 `server_py_sha256` 与字节数 + 在本文档记录原因，三件一起做。
+
+#### `server.py` 变更记录
+
+| 日期 | 变更 | 原因 | sha256 前 12 位 |
+|---|---|---|---|
+| 2026-09-18 | 新增同进程抓取/缓存 API：`GET /api/futures`、`POST /api/futures/refresh` | 期货工具箱需要「站内立即刷新」且「抓取失败保留旧数据」，纯静态服务做不到。详见 `docs/FUTURES.md` | — |
+| 2026-09-18 | **修正**刷新接口的同源校验：不再拿 `Origin` 比对 `Host`，只保留 `X-FluxDesk-Request` | **线上 bug**（见下） | `8a87611adaf2` |
+
+**那次 bug 的完整经过**：原实现是
+`if X-FluxDesk-Request != "1" or (Origin and urlsplit(Origin).netloc != Host): 403`。
+但**平台边缘网关不向应用转发可用的 `Host`**（实测显式 `-H "Host: <公网域名>"` 也无效，
+试遍 `localhost` / `127.0.0.1` 各种端口均 403），而**浏览器对 POST 必定带 `Origin`**，
+于是这个条件**恒真** → **所有真实用户的「立即刷新」100% 失败**，
+前端显示「连接失败，继续显示上次保存的数据」（`build/futures.js` 的 `catch` 兜底文案）。
+最坑的是**命令行 `curl` 不带 `Origin` 反而返回 200**，所以当时的验收"通过"是假绿。
+（自动定时抓取不受影响：后台线程是进程内直接调 `Cache.refresh()`，不走 HTTP 这道关。）
+
+**去掉 Origin 比对为什么仍然安全**：跨站防护由自定义头独立承担 ——
+`X-FluxDesk-Request` 不是 CORS 安全头，跨域 `fetch` 必须先生成预检，而本服务
+**不返回任何 `Access-Control-*` 头**（`OPTIONS` 直接 501），浏览器随即拦掉真实请求；
+HTML 表单则设不了自定义头。`tests/test_futures.py` 已同时锁定
+「同源必须 200」「错配 `Host` 也必须 200」「任何响应都不得暴露 CORS 头」三条回归。
+
+**验收这条路由时务必带上 `Origin` 头**（模拟浏览器），否则测不到真实路径：
+`curl -sS -o /dev/null -w "%{http_code}\n" -X POST -H "X-FluxDesk-Request: 1" -H "Origin: <公网域名>" <endpoint>/api/futures/refresh?category=futures`
 
 ---
 

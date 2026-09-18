@@ -115,9 +115,14 @@ class Handler(SimpleHTTPRequestHandler):
         if urlsplit(self.path).path != "/api/futures/refresh":
             self.send_error(404)
             return
-        origin = self.headers.get("Origin")
-        if (self.headers.get("X-FluxDesk-Request") != "1" or
-                (origin and urlsplit(origin).netloc != self.headers.get("Host"))):
+        # 跨站防护只靠这个自定义头，不要再拿 Origin 去比对 Host（2026-09-18 修正）。
+        # 理由：自定义头不是 CORS 安全头，跨域 fetch 必先触发预检，而本服务不返回任何
+        # Access-Control-* 头（OPTIONS 直接 501），浏览器会拦掉真实请求；form 提交又
+        # 无法设置自定义头。两道真实攻击路径都在这里就死了。
+        # 反面教训：平台边缘网关不向应用转发可用的 Host（显式指定也没用），浏览器对
+        # POST 必定带 Origin，于是 "Origin != Host" 恒真 → 所有真实用户的刷新请求全被
+        # 403；而命令行不带 Origin 反而 200，极易自测"通过"。
+        if self.headers.get("X-FluxDesk-Request") != "1":
             self.send_error(403)
             return
         self._futures(refresh=True)
