@@ -96,20 +96,36 @@ __APPCSS__
 <!-- ==================== 应用主体 ==================== -->
 <div class="hidden" id="viewApp">
   <canvas class="particle-canvas app-particle-canvas" id="appParticles" aria-hidden="true"></canvas>
-  <header class="appbar">
-    <div class="brand">
+  <aside class="workspace-sidebar">
+    <div class="workspace-brand">
       <img class="brand-companion" src="/assets/fluxdesk-companion.png" alt=""/>
       <div class="brand-wordmark">Flux<span>Desk</span></div>
-      <div class="sub" id="dataSource">示例数据（铜）</div>
     </div>
-    <nav class="app-tabs">
-      <button class="app-tab active" data-tab="dash" type="button">数据看板</button>
-      <button class="app-tab" data-tab="upload" type="button">上传数据</button>
-      <button class="app-tab" data-tab="history" type="button">历史数据</button>
-      <button class="app-tab" data-tab="risk" type="button">实控人风险日志</button>
-      <button class="app-tab hidden" data-tab="admin" id="tabAdmin" type="button">运营台<span class="dotbadge hidden" id="adminBadge">0</span></button>
+    <div class="workspace-switch"><div><b>风险与行情工作站</b><small id="dataSource">示例数据（铜）</small></div><span>⌄</span></div>
+    <div class="workspace-nav-label">工作台</div>
+    <nav class="workspace-nav">
+      <button class="app-tab active" data-tab="dash" type="button"><span class="nav-glyph">▦</span>总览</button>
+      <button class="app-tab" data-tab="market" type="button"><span class="nav-glyph">⌁</span>市场看板</button>
+      <button class="app-tab" data-tab="upload" type="button"><span class="nav-glyph">⇧</span>数据中心</button>
     </nav>
-    <div class="me">
+    <div class="workspace-nav-label">风险管理</div>
+    <nav class="workspace-nav">
+      <button class="app-tab" data-tab="risk" type="button"><span class="nav-glyph">◇</span>实控人风险日志<span class="nav-badge" id="sideRiskBadge">—</span></button>
+      <button class="app-tab" data-tab="history" type="button"><span class="nav-glyph">▤</span>历史记录</button>
+    </nav>
+    <div class="workspace-nav-label">系统</div>
+    <nav class="workspace-nav">
+      <button class="app-tab hidden" data-tab="admin" id="tabAdmin" type="button"><span class="nav-glyph">⚙</span>运营台<span class="dotbadge hidden" id="adminBadge">0</span></button>
+    </nav>
+    <div class="workspace-side-foot">
+      <div class="workspace-avatar">FD</div><div><b id="sideUser">FluxDesk 用户</b><span id="sidePlan">已开通</span></div>
+    </div>
+  </aside>
+  <main class="workspace-main">
+    <header class="workspace-topbar">
+      <div class="workspace-crumb"><span>工作台</span><i>/</i><b id="workspaceCrumb">总览</b></div>
+      <button class="workspace-search" id="btnQuickSearch" type="button"><span>⌕</span><span>搜索账户、MAC 或功能…</span><kbd>Ctrl K</kbd></button>
+      <div class="me">
       <button class="theme-toggle app-theme-toggle" type="button" data-theme-toggle aria-label="切换明暗主题">
         <span class="theme-sun">☼</span><span class="theme-moon">◐</span><span data-theme-label>浅色</span>
       </button>
@@ -120,8 +136,8 @@ __APPCSS__
       <span class="who" id="meWho">—</span>
       <button class="btn sm" id="btnSetPwd" type="button" title="给当前账号设置或重设登录密码">设置密码</button>
       <button class="btn sm" id="btnSignOut" type="button">退出</button>
-    </div>
-  </header>
+      </div>
+    </header>
 
   <!-- 通知浮窗（首页右上角 🔔 点开） -->
   <div class="notif hidden" id="notifPanel" role="dialog" aria-label="消息通知">
@@ -133,8 +149,29 @@ __APPCSS__
     <div class="notif-foot" id="notifFoot"></div>
   </div>
 
-  <!-- 看板 -->
+  <!-- 工作站总览 -->
   <section class="panel active" id="panelDash">
+    <div class="overview-content">
+      <div class="overview-head"><div><h1>工作站总览</h1><div class="overview-status"><i></i><span>数据已同步</span><span>·</span><span id="overviewUpdated">等待数据</span></div></div><div class="overview-actions"><button class="btn" id="btnOverviewMarket" type="button">查看市场看板</button><button class="btn primary" id="btnOverviewExport" type="button">导出报告</button></div></div>
+      <section class="overview-metrics">
+        <article><div class="metric-label"><span>最新收盘</span><span id="ovContract">—</span></div><div class="metric-main"><b id="ovClose">—</b><em id="ovChange">—</em></div><svg class="metric-spark" id="ovSparkPrice" viewBox="0 0 180 30" preserveAspectRatio="none"></svg></article>
+        <article><div class="metric-label"><span>持仓量</span><span>手</span></div><div class="metric-main"><b id="ovOpenInterest">—</b><em id="ovOiChange">—</em></div><svg class="metric-spark" id="ovSparkOi" viewBox="0 0 180 30" preserveAspectRatio="none"></svg></article>
+        <article><div class="metric-label"><span>异常 MAC</span><span>当前版本</span></div><div class="metric-main"><b id="ovRiskMac">—</b><em class="risk" id="ovRiskHigh">未载入</em></div><div class="metric-foot" id="ovRiskSource">风险日志</div></article>
+        <article><div class="metric-label"><span>涉及资金账户</span><span>去重</span></div><div class="metric-main"><b id="ovRiskAccounts">—</b><em id="ovRiskSegments">—</em></div><div class="metric-foot">按资金账号前四位归类</div></article>
+      </section>
+      <section class="overview-grid">
+        <article class="overview-card overview-market-card"><div class="overview-card-head"><div><b>价格与持仓联动</b><small id="ovMarketNote">行情数据</small></div><button class="mini-action" id="btnOverviewMarket2" type="button">打开完整看板</button></div><div class="overview-chart"><svg id="ovPriceChart" viewBox="0 0 760 250" preserveAspectRatio="none"></svg></div></article>
+        <article class="overview-card"><div class="overview-card-head"><div><b>风险聚合</b><small>按关联账户数排序</small></div><button class="mini-action" id="btnOverviewRisk" type="button">查看全部</button></div><div class="overview-risk-summary"><div><small>异常设备</small><b id="ovRiskDevices">—</b></div><div><small>高风险组</small><b class="hot" id="ovRiskGroups">—</b></div></div><div class="overview-risk-list" id="ovRiskList"><div class="overview-empty">载入风险日志后显示聚合结果</div></div></article>
+      </section>
+      <section class="overview-lower">
+        <article class="overview-card"><div class="overview-card-head"><div><b>重点账户关系</b><small>当前风险日志 · 仅显示摘要</small></div><button class="mini-action" id="btnOverviewFilter" type="button">筛选号段</button></div><div class="overview-table-wrap"><table class="overview-table"><thead><tr><th>资金账号</th><th>客户</th><th>所属号段</th><th>关联设备</th><th>状态</th></tr></thead><tbody id="ovAccountBody"><tr><td colspan="5">载入风险日志后显示账户关系</td></tr></tbody></table></div></article>
+        <article class="overview-card"><div class="overview-card-head"><div><b>数据动态</b><small>当前工作区状态</small></div></div><div class="overview-feed" id="ovFeed"></div></article>
+      </section>
+    </div>
+  </section>
+
+  <!-- 完整市场看板 -->
+  <section class="panel" id="panelMarket">
     <div id="cuRoot"></div>
     <button class="export-fab" id="btnExport" type="button" title="把当前看板导出为文件">
       <span class="ef-ic">⤓</span><span>导出成果</span>
@@ -354,6 +391,7 @@ __APPCSS__
       </div>
     </div>
   </section>
+</main>
 </div>
 
 <div class="toast" id="toast"></div>

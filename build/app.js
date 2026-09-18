@@ -107,7 +107,7 @@
       b.setAttribute('aria-pressed', dark ? 'true' : 'false');
       b.setAttribute('title', dark ? '切换到浅色主题' : '切换到深色主题');
       var label = b.querySelector('[data-theme-label]');
-      if (label) label.textContent = dark ? '浅色' : '深色';
+      if (label) label.textContent = dark ? '深色' : '浅色';
     });
   }
   function applyTheme(theme, refreshDashboard) {
@@ -125,70 +125,83 @@
   function toggleTheme() {
     applyTheme(currentTheme() === 'dark' ? 'light' : 'dark', true);
   }
-  function createParticleField(canvasId, count, interactive) {
-    var canvas = $(canvasId);
+  function createLoginParticles() {
+    var canvas = $('authParticles');
     if (!canvas || !canvas.getContext || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    var ctx = canvas.getContext('2d');
-    var points = [], width = 0, height = 0, dpr = 1;
-    var pointer = { x: -9999, y: -9999 };
-    function resize() {
-      var rect = canvas.getBoundingClientRect();
-      var oldWidth = width, oldHeight = height;
-      width = Math.max(1, rect.width); height = Math.max(1, rect.height);
-      dpr = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      if (oldWidth <= 1 || oldHeight <= 1 || Math.abs(oldWidth - width) > 160 || Math.abs(oldHeight - height) > 160) points = [];
-      while (points.length < count) points.push({
-        x: Math.random() * width, y: Math.random() * height,
-        vx: (Math.random() - .5) * (interactive ? .34 : .16),
-        vy: (Math.random() - .5) * (interactive ? .34 : .16),
-        r: .7 + Math.random() * 1.35
+    var ctx = canvas.getContext('2d'), particles = [], w = 0, h = 0, dpr = 1;
+    var mouse = { x: -9999, y: -9999 };
+    function seed() {
+      var count = Math.max(72, Math.min(150, Math.floor(w * h / 10500)));
+      particles = [];
+      for (var i = 0; i < count; i++) particles.push({
+        x: Math.random() * w, y: Math.random() * h,
+        vx: .16 + Math.random() * .34, vy: 0,
+        phase: Math.random() * Math.PI * 2, size: .65 + Math.random() * 1.35
       });
     }
-    function movePointer(e) {
-      var rect = canvas.getBoundingClientRect();
-      pointer.x = e.clientX - rect.left; pointer.y = e.clientY - rect.top;
+    function resize() {
+      dpr = Math.min(window.devicePixelRatio || 1, 2); w = window.innerWidth; h = window.innerHeight;
+      canvas.width = w * dpr; canvas.height = h * dpr;
+      canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0); seed();
     }
-    function frame() {
-      if (canvas.clientWidth > 1 && canvas.clientHeight > 1 &&
-          (Math.abs(canvas.clientWidth - width) > 1 || Math.abs(canvas.clientHeight - height) > 1)) resize();
-      if (width && height) {
-        ctx.clearRect(0, 0, width, height);
-        var dark = currentTheme() === 'dark';
-        var dot = dark ? '111,231,255' : '58,93,182';
-        var line = dark ? '92,212,255' : '81,113,190';
-        var reach = interactive ? 132 : 115;
-        for (var i = 0; i < points.length; i++) {
-          var p = points[i];
-          if (interactive) {
-            var dx = p.x - pointer.x, dy = p.y - pointer.y, ds = dx * dx + dy * dy;
-            if (ds < 7200 && ds > 1) { p.vx += dx / ds * .085; p.vy += dy / ds * .085; }
-          }
-          p.vx *= .995; p.vy *= .995; p.x += p.vx; p.y += p.vy;
-          if (p.x < -8) p.x = width + 8; else if (p.x > width + 8) p.x = -8;
-          if (p.y < -8) p.y = height + 8; else if (p.y > height + 8) p.y = -8;
-          ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-          ctx.fillStyle = 'rgba(' + dot + ',' + (interactive ? .42 : .18) + ')'; ctx.fill();
-          for (var j = i + 1; j < points.length; j++) {
-            var q = points[j], lx = p.x - q.x, ly = p.y - q.y, dist = Math.sqrt(lx * lx + ly * ly);
-            if (dist < reach) {
-              ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y);
-              ctx.strokeStyle = 'rgba(' + line + ',' + ((1 - dist / reach) * (interactive ? .16 : .055)) + ')';
-              ctx.lineWidth = .7; ctx.stroke();
-            }
-          }
+    function draw() {
+      ctx.clearRect(0, 0, w, h);
+      var light = currentTheme() === 'light';
+      for (var i = 0; i < particles.length; i++) {
+        var p = particles[i];
+        var field = Math.sin(p.x * .004 + p.phase) + Math.cos(p.y * .006 - p.phase * .7);
+        p.vy += field * .006; p.vy *= .975; p.x += p.vx; p.y += p.vy;
+        var dx = p.x - mouse.x, dy = p.y - mouse.y, dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 110) { p.x += dx / (dist || 1) * .32; p.y += dy / (dist || 1) * .32; }
+        if (p.x > w + 12) { p.x = -12; p.y = Math.random() * h; }
+        if (p.y > h + 12) p.y = -12; if (p.y < -12) p.y = h + 12;
+      }
+      for (var a = 0; a < particles.length; a++) for (var b = a + 1; b < particles.length; b++) {
+        var pa = particles[a], pb = particles[b], lx = pa.x - pb.x, ly = pa.y - pb.y, ld = lx * lx + ly * ly;
+        if (ld < 6200) {
+          var alpha = (1 - ld / 6200) * (light ? .13 : .2);
+          ctx.strokeStyle = light ? 'rgba(76,104,205,' + alpha + ')' : 'rgba(112,145,255,' + alpha + ')';
+          ctx.lineWidth = .7; ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y); ctx.stroke();
         }
       }
-      window.requestAnimationFrame(frame);
+      for (var j = 0; j < particles.length; j++) {
+        var q = particles[j], grad = ctx.createRadialGradient(q.x, q.y, 0, q.x, q.y, q.size * 4);
+        grad.addColorStop(0, light ? 'rgba(65,100,220,.72)' : 'rgba(129,156,255,.88)');
+        grad.addColorStop(.35, light ? 'rgba(32,173,190,.28)' : 'rgba(62,210,221,.38)');
+        grad.addColorStop(1, 'rgba(70,120,255,0)');
+        ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(q.x, q.y, q.size * 4, 0, Math.PI * 2); ctx.fill();
+      }
+      window.requestAnimationFrame(draw);
     }
-    resize();
     window.addEventListener('resize', resize);
-    if (interactive) {
-      canvas.addEventListener('pointermove', movePointer);
-      canvas.addEventListener('pointerleave', function () { pointer.x = -9999; pointer.y = -9999; });
+    window.addEventListener('pointermove', function (e) { mouse.x = e.clientX; mouse.y = e.clientY; });
+    window.addEventListener('pointerleave', function () { mouse.x = -9999; mouse.y = -9999; });
+    resize(); window.requestAnimationFrame(draw);
+  }
+  function createAmbientParticles() {
+    var canvas = $('appParticles');
+    if (!canvas || !canvas.getContext || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var ctx = canvas.getContext('2d'), particles = [], w = 0, h = 0, dpr = 1;
+    function resize() {
+      dpr = Math.min(window.devicePixelRatio || 1, 2); w = window.innerWidth; h = window.innerHeight;
+      canvas.width = w * dpr; canvas.height = h * dpr;
+      canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0); particles = [];
+      var count = Math.max(34, Math.min(68, Math.floor(w * h / 22000)));
+      for (var i = 0; i < count; i++) particles.push({ x: Math.random() * w, y: Math.random() * h, speed: .07 + Math.random() * .15, phase: Math.random() * 6.28, size: .45 + Math.random() * .7 });
     }
-    window.requestAnimationFrame(frame);
+    function draw() {
+      ctx.clearRect(0, 0, w, h); var light = currentTheme() === 'light';
+      for (var i = 0; i < particles.length; i++) { var p = particles[i]; p.x += p.speed; p.y += Math.sin(p.x * .003 + p.phase) * .035; if (p.x > w + 8) { p.x = -8; p.y = Math.random() * h; } }
+      for (var a = 0; a < particles.length; a++) for (var b = a + 1; b < particles.length; b++) {
+        var pa = particles[a], pb = particles[b], dx = pa.x - pb.x, dy = pa.y - pb.y, dist = dx * dx + dy * dy;
+        if (dist < 8400) { var alpha = (1 - dist / 8400) * (light ? .045 : .075); ctx.strokeStyle = light ? 'rgba(79,107,208,' + alpha + ')' : 'rgba(103,135,240,' + alpha + ')'; ctx.lineWidth = .55; ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y); ctx.stroke(); }
+      }
+      for (var j = 0; j < particles.length; j++) { var q = particles[j]; ctx.fillStyle = light ? 'rgba(74,105,213,.14)' : 'rgba(111,145,255,.2)'; ctx.beginPath(); ctx.arc(q.x, q.y, q.size, 0, Math.PI * 2); ctx.fill(); }
+      window.requestAnimationFrame(draw);
+    }
+    window.addEventListener('resize', resize); resize(); window.requestAnimationFrame(draw);
   }
 
   /* ==================== 认证界面 ==================== */
@@ -656,6 +669,8 @@
     } else {
       chip.className = 'chip good'; chip.textContent = '已开通 · 不限时';
     }
+    if ($('sideUser')) $('sideUser').textContent = maskEmail(S.userEmail);
+    if ($('sidePlan')) $('sidePlan').textContent = chip.textContent;
 
     // 运营方标签可见性（身份已在 checkAccess 里判定）
     $('tabAdmin').classList.toggle('hidden', !S.isOperator);
@@ -672,6 +687,69 @@
     $('dataSource').textContent = S.dataSource;
     CuRender.mount($('cuRoot'), d);
     S.mounted = true;
+    renderOverview();
+  }
+
+  function ovNum(n) {
+    return (n === null || n === undefined || n === '' || !isFinite(Number(n))) ? '—' : Number(n).toLocaleString('zh-CN');
+  }
+  function ovLine(values, width, height, pad) {
+    var clean = (values || []).map(Number).filter(function (n) { return isFinite(n); });
+    if (clean.length < 2) return '';
+    var lo = Math.min.apply(Math, clean), hi = Math.max.apply(Math, clean), span = hi - lo || 1;
+    return clean.map(function (v, i) {
+      var x = pad + i / (clean.length - 1) * (width - pad * 2);
+      var y = pad + (hi - v) / span * (height - pad * 2);
+      return x.toFixed(1) + ',' + y.toFixed(1);
+    }).join(' ');
+  }
+  function setSpark(id, values, color) {
+    var el = $(id); if (!el) return;
+    var pts = ovLine((values || []).slice(-24), 180, 30, 2);
+    el.innerHTML = pts ? '<polyline points="' + pts + '" fill="none" stroke="' + color + '" stroke-width="1.8"/>' : '';
+  }
+  function maskAccount(s) {
+    s = String(s || '');
+    return s.length > 6 ? s.slice(0, 4) + '••••' + s.slice(-2) : s;
+  }
+  function renderOverview() {
+    if (!$('ovClose')) return;
+    var D = S.data || {}, sum = D.summary || {}, meta = D.meta || {}, bars = D.kline || [];
+    $('ovContract').textContent = meta.contract || '—';
+    $('ovClose').textContent = ovNum(sum.close);
+    var chg = Number(sum.chgPct || 0), chgEl = $('ovChange');
+    chgEl.textContent = (chg > 0 ? '+' : '') + chg.toFixed(2) + '%'; chgEl.className = chg >= 0 ? 'up' : 'down';
+    $('ovOpenInterest').textContent = ovNum(sum.openInterest);
+    var oi = Number(sum.oiChange || 0), oiEl = $('ovOiChange');
+    oiEl.textContent = (oi > 0 ? '+' : '') + ovNum(oi); oiEl.className = oi >= 0 ? 'up' : 'down';
+    $('overviewUpdated').textContent = meta.generatedAt ? '更新于 ' + meta.generatedAt : '数据已载入';
+    $('ovMarketNote').textContent = (meta.exchange || '行情') + ' · ' + (meta.contract || '主力合约') + ' · 日线';
+    setSpark('ovSparkPrice', bars.map(function (b) { return b.c; }), chg >= 0 ? '#54d69c' : '#ff6d7a');
+    setSpark('ovSparkOi', bars.map(function (b) { return b.oi; }), '#7c9cff');
+
+    var chart = $('ovPriceChart');
+    if (chart && bars.length > 1) {
+      var recent = bars.slice(-45), pts = ovLine(recent.map(function (b) { return b.c; }), 760, 210, 18);
+      var area = pts ? pts + ' 742,228 18,228' : '';
+      var grid = [35,85,135,185].map(function (y) { return '<line x1="18" y1="' + y + '" x2="742" y2="' + y + '"/>'; }).join('');
+      chart.innerHTML = '<defs><linearGradient id="ovFill" x1="0" y1="0" x2="0" y2="1"><stop stop-color="var(--gold)" stop-opacity=".26"/><stop offset="1" stop-color="var(--gold)" stop-opacity="0"/></linearGradient></defs><g class="ov-grid">' + grid + '</g><polygon class="ov-area" points="' + area + '"/><polyline class="ov-line" points="' + pts + '"/><text class="ov-axis" x="18" y="244">' + esc(recent[0].d || '') + '</text><text class="ov-axis" x="690" y="244">' + esc(recent[recent.length - 1].d || '') + '</text>';
+    }
+
+    var R = S.riskData, groups = R && R.groups ? R.groups : [], abnormal = groups.filter(function (g) { return g.accountCount >= 2; });
+    var high = abnormal.filter(function (g) { return g.accountCount >= 4; }), accountMap = {}, prefixes = {}, devicesByAccount = {};
+    abnormal.forEach(function (g) { g.accounts.forEach(function (a) { accountMap[a.account] = a; prefixes[String(a.account).slice(0, 4)] = true; devicesByAccount[a.account] = (devicesByAccount[a.account] || 0) + 1; }); });
+    $('ovRiskMac').textContent = R ? ovNum(abnormal.length) : '—'; $('ovRiskHigh').textContent = R ? high.length + ' 个高风险组' : '未载入';
+    $('ovRiskAccounts').textContent = R ? ovNum(Object.keys(accountMap).length) : '—'; $('ovRiskSegments').textContent = R ? Object.keys(prefixes).length + ' 个号段' : '—';
+    $('ovRiskDevices').textContent = R ? ovNum(abnormal.length) : '—'; $('ovRiskGroups').textContent = R ? ovNum(high.length) : '—';
+    $('ovRiskSource').textContent = S.riskSource || '风险日志'; if ($('sideRiskBadge')) $('sideRiskBadge').textContent = R ? abnormal.length : '—';
+    $('ovRiskList').innerHTML = abnormal.length ? abnormal.slice(0, 4).map(function (g, i) { return '<div class="overview-risk-row"><span>' + String(i + 1).padStart(2, '0') + '</span><div><b>' + esc(g.mac) + '</b><small>' + ovNum(g.totalEvents) + ' 条登录记录</small></div><em>' + g.accountCount + ' 个账户</em></div>'; }).join('') : '<div class="overview-empty">载入风险日志后显示聚合结果</div>';
+    var accounts = Object.keys(accountMap).sort(function (a, b) { return (devicesByAccount[b] || 0) - (devicesByAccount[a] || 0); }).slice(0, 4);
+    $('ovAccountBody').innerHTML = accounts.length ? accounts.map(function (key) { var a = accountMap[key], names = a.customers && a.customers.length ? a.customers.join(' / ') : '姓名缺失'; return '<tr><td class="mono">' + esc(maskAccount(key)) + '</td><td>' + esc(names) + '</td><td class="mono">' + esc(key.slice(0, 4)) + '</td><td class="mono">' + (devicesByAccount[key] || 1) + ' MAC</td><td><span class="ov-tag"><i></i>需复核</span></td></tr>'; }).join('') : '<tr><td colspan="5">载入风险日志后显示账户关系</td></tr>';
+    var feed = [];
+    if (R) feed.push(['风险日志已载入', ovNum(R.validRows) + ' 条有效记录，' + ovNum(abnormal.length) + ' 个异常 MAC。', R.lastEvent || '当前']);
+    if (D.kline && D.kline.length) feed.push(['行情数据已同步', ovNum(D.kline.length) + ' 个交易日通过结构检查。', meta.date || '当前']);
+    if (S.datasets && S.datasets.length) feed.push(['历史版本可用', ovNum(S.datasets.length) + ' 份文件保存在个人云端目录。', '云端']);
+    $('ovFeed').innerHTML = feed.length ? feed.map(function (x) { return '<div><time>' + esc(x[2]) + '</time><b>' + esc(x[0]) + '</b><p>' + esc(x[1]) + '</p></div>'; }).join('') : '<div class="overview-empty">暂无工作区动态</div>';
   }
 
   var curTab = '';
@@ -680,14 +758,18 @@
     closeNotifs();
     var was = curTab;
     curTab = name;
-    ['dash', 'upload', 'history', 'risk', 'admin'].forEach(function (t) {
+    ['dash', 'market', 'upload', 'history', 'risk', 'admin'].forEach(function (t) {
       var p = $('panel' + t.charAt(0).toUpperCase() + t.slice(1));
       if (p) p.classList.toggle('active', t === name);
     });
     document.querySelectorAll('.app-tab').forEach(function (b) {
       b.classList.toggle('active', b.getAttribute('data-tab') === name);
     });
+    var titles = { dash: '总览', market: '市场看板', upload: '数据中心', history: '历史记录', risk: '实控人风险日志', admin: '运营台' };
+    if ($('workspaceCrumb')) $('workspaceCrumb').textContent = titles[name] || '工作台';
+    if (was && was !== name) window.scrollTo(0, 0);
     if (name === 'dash') {
+      renderOverview();
       if (S.mounted) setTimeout(function () { window.dispatchEvent(new Event('resize')); }, 40);
       // 三条入口（刚登录 / 切回首页 / 刷新后回到主页）最终都走到这里。
       // 先拉最新列表再安排弹出 —— 否则可能拿着上一轮的旧数据判断有没有"新通知"。
@@ -700,6 +782,7 @@
       autoPop.armed = true;
       if (autoPop.timer) { clearTimeout(autoPop.timer); autoPop.timer = null; }
     }
+    if (name === 'market' && S.mounted) setTimeout(function () { window.dispatchEvent(new Event('resize')); }, 40);
     if (name === 'history') loadDatasets();
     if (name === 'risk') loadDatasets().then(function () {
       if (S.riskData) return;
@@ -801,6 +884,7 @@
       S.datasets = r.data || [];
       renderHistory();
       renderRiskHistory();
+      renderOverview();
     } catch (e) {
       $('histBody').innerHTML = '<tr><td colspan="6"><div class="empty-state">读取失败：' + esc(e && e.message ? e.message : String(e)) + '</div></td></tr>';
     }
@@ -1006,6 +1090,7 @@
       S.riskFiltered = []; $('btnRiskExport').disabled = true;
       $('riskSummary').innerHTML = '';
       $('riskBody').innerHTML = '<tr><td colspan="5"><div class="empty-state">请先上传或从历史版本载入风险日志。</div></td></tr>';
+      renderOverview();
       return;
     }
     var opts = riskOptions();
@@ -1028,6 +1113,7 @@
     }).join('');
     if (!rows.length) {
       $('riskBody').innerHTML = '<tr><td colspan="5"><div class="empty-state">没有符合当前号段和异常门槛的记录。</div></td></tr>';
+      renderOverview();
       return;
     }
     $('riskBody').innerHTML = rows.map(function (g) {
@@ -1041,6 +1127,7 @@
         '<td class="num"><b>' + g.accountCount + '</b></td><td class="num">' + g.totalEvents.toLocaleString() + '</td>' +
         '<td class="l mono-small nowrap">' + esc(g.lastEvent || '—') + '</td></tr>';
     }).join('');
+    renderOverview();
   }
 
   function renderRiskHistory() {
@@ -1706,8 +1793,8 @@
       b.addEventListener('click', toggleTheme);
     });
     syncThemeControls();
-    createParticleField('authParticles', 92, true);
-    createParticleField('appParticles', 54, false);
+    createLoginParticles();
+    createAmbientParticles();
     document.querySelectorAll('.app-tab').forEach(function (b) {
       b.addEventListener('click', function () { switchTab(b.getAttribute('data-tab')); });
     });
@@ -1779,6 +1866,18 @@
     $('riskMinAccounts').addEventListener('change', applyRiskFilter);
     $('btnRiskExport').addEventListener('click', exportRiskResults);
     $('btnRiskRefresh').addEventListener('click', function () { loadDatasets().then(function () { toast('ok', '风险日志历史已刷新'); }); });
+
+    /* ---------- 工作站总览快捷入口 ---------- */
+    ['btnOverviewMarket', 'btnOverviewMarket2'].forEach(function (id) {
+      $(id).addEventListener('click', function () { switchTab('market'); });
+    });
+    ['btnOverviewRisk', 'btnOverviewFilter', 'btnQuickSearch'].forEach(function (id) {
+      $(id).addEventListener('click', function () {
+        switchTab('risk');
+        setTimeout(function () { if ($('riskQuery')) $('riskQuery').focus(); }, 30);
+      });
+    });
+    $('btnOverviewExport').addEventListener('click', openExport);
 
     /* ---------- 成果导出 ---------- */
     $('btnExport').addEventListener('click', openExport);
