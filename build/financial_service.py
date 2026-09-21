@@ -12,6 +12,19 @@ CATALOG = {x['id']: x for x in json.loads((Path(__file__).parent / 'financial_ca
 _cache = OrderedDict()
 _hits = defaultdict(deque)
 _lock = threading.Lock()
+_KEY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.hithink_key')
+
+
+def _api_key():
+    """Prefer the platform environment; fall back to a local deployment secret."""
+    value = os.environ.get('HITHINK_FINANCE_API_KEY')
+    if value:
+        return value.strip()
+    try:
+        with open(_KEY_FILE, encoding='utf-8') as handle:
+            return handle.read().strip()
+    except OSError:
+        return ''
 
 
 def query(endpoint_id, params, client='local', fetch=None):
@@ -43,7 +56,8 @@ def query(endpoint_id, params, client='local', fetch=None):
         clean['limit'] = '50'
     if 'thscodes' in clean and len(clean['thscodes'].split(',')) > 20:
         raise ValueError('Maximum 20 symbols per request')
-    if not os.environ.get('HITHINK_FINANCE_API_KEY'):
+    key = _api_key()
+    if not key:
         raise RuntimeError('Server API key is not configured')
     cache_key = (endpoint_id, tuple(sorted(clean.items())))
     now = time.monotonic()
@@ -59,7 +73,7 @@ def query(endpoint_id, params, client='local', fetch=None):
             raise RuntimeError('Too many requests; retry in one minute')
         history.append(now)
     url = 'https://fuyao.aicubes.cn' + endpoint['path'] + ('?' + urlencode(clean) if clean else '')
-    request = Request(url, headers={'X-api-key': os.environ['HITHINK_FINANCE_API_KEY']})
+    request = Request(url, headers={'X-api-key': key})
     if fetch is None:
         def fetch(req):
             with urlopen(req, timeout=20) as response:

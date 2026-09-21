@@ -246,6 +246,17 @@ class RoutingTests(unittest.TestCase):
             with urlopen(self.url + path) as response:
                 self.assertIn(b'<!DOCTYPE html>', response.read(100))
 
+    def test_hithink_key_file_is_never_exposed(self):
+        key_file = ROOT / 'dist/.hithink_key'
+        key_file.write_text('test-only-secret', encoding='utf-8')
+        try:
+            with urlopen(self.url + '/.hithink_key') as response:
+                body = response.read()
+            self.assertIn(b'<!DOCTYPE html>', body)
+            self.assertNotIn(b'test-only-secret', body)
+        finally:
+            key_file.unlink(missing_ok=True)
+
 
 if __name__ == '__main__':
     unittest.main()

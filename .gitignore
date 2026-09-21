@@ -68,4 +68,5 @@ desktop.ini
 /dist/stocks_service.py
 /dist/financial_service.py
 /dist/financial_catalog.json
+/dist/.hithink_key
 /.futures-cache/

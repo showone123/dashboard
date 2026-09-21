@@ -2,6 +2,7 @@ import os
 import sys
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'build'))
@@ -27,6 +28,23 @@ class StocksTest(unittest.TestCase):
                 stocks_service.snapshot(['http://localhost/'], fetch)
             with self.assertRaises(ValueError):
                 stocks_service.snapshot(['600519.SH'] * 11, fetch)
+
+    def test_key_file_fallback_and_environment_priority(self):
+        with TemporaryDirectory() as tmp:
+            key_file = Path(tmp) / '.hithink_key'
+            key_file.write_text('file-key\n', encoding='utf-8')
+            with patch.object(stocks_service, '_KEY_FILE', str(key_file)), patch.dict(os.environ, {'HITHINK_FINANCE_API_KEY': ' env-key '}):
+                self.assertEqual(stocks_service._api_key(), 'env-key')
+            with patch.object(stocks_service, '_KEY_FILE', str(key_file)), patch.dict(os.environ, {'HITHINK_FINANCE_API_KEY': ''}):
+                self.assertEqual(stocks_service._api_key(), 'file-key')
+            key_file.write_text('', encoding='utf-8')
+            with patch.object(stocks_service, '_KEY_FILE', str(key_file)), patch.dict(os.environ, {'HITHINK_FINANCE_API_KEY': ''}):
+                with self.assertRaises(RuntimeError):
+                    stocks_service.snapshot(['600519.SH'], lambda _: {})
+            key_file.unlink()
+            with patch.object(stocks_service, '_KEY_FILE', str(key_file)), patch.dict(os.environ, {'HITHINK_FINANCE_API_KEY': ''}):
+                with self.assertRaises(RuntimeError):
+                    stocks_service.snapshot(['600519.SH'], lambda _: {})
 
 
 if __name__ == '__main__':

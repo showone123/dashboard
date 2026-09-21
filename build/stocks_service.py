@@ -11,12 +11,25 @@ CODE = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
 _cache = {}
 _lock = threading.Lock()
 TTL = 30
+_KEY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".hithink_key")
+
+
+def _api_key():
+    """Prefer the platform environment; fall back to a local deployment secret."""
+    value = os.environ.get("HITHINK_FINANCE_API_KEY")
+    if value:
+        return value.strip()
+    try:
+        with open(_KEY_FILE, encoding="utf-8") as handle:
+            return handle.read().strip()
+    except OSError:
+        return ""
 
 
 def snapshot(codes, fetch=None):
     if not codes or len(codes) > 10 or len(set(codes)) != len(codes) or any(not CODE.fullmatch(c) for c in codes):
         raise ValueError("Use 1-10 unique full A-share codes")
-    key = os.environ.get("HITHINK_FINANCE_API_KEY")
+    key = _api_key()
     if not key:
         raise RuntimeError("HITHINK_FINANCE_API_KEY is not configured on the server")
     now = time.monotonic()

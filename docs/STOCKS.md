@@ -4,7 +4,7 @@
 
 浏览器只请求本站 `GET /api/stocks?codes=600519.SH,000001.SZ`，并携带 `X-FluxDesk-Request: 1`；`build/stocks_service.py` 在服务端校验代码、调用同花顺 `GET /api/a-share/prices/snapshot`，只返回页面需要的字段并保留 `null`。服务端按股票代码缓存 30 秒，避免每个浏览器轮询都消耗上游调用。请求失败返回 503，页面保留上次显示的行情。自选列表仅存在当前浏览器的 `fluxdesk_stocks_v1:<用户ID>` 中，不进入客户数据库。
 
-部署前在 **WorkBuddy 应用的服务端环境变量** 设置 `HITHINK_FINANCE_API_KEY`，并确认应用服务器可以出站访问 `https://fuyao.aicubes.cn`。不要把 Key 放进 `.env.example`、`dist/`、前端、Git 或公开日志。发布时必须同步更新整个 `dist/`，其中包含 `server.py` 和 `stocks_service.py`。本次没有数据库迁移，也没有改变现有登录、上传与云服务配置。
+密钥优先从服务端环境变量 `HITHINK_FINANCE_API_KEY` 读取。当前 WorkBuddy 发布工具没有环境变量入口，因此部署方需在发布目录写入 `dist/.hithink_key` 作为兜底；文件只放一行密钥，不加变量名或引号。该点文件已被 Git 忽略，静态服务器会把点文件请求回退到首页。不要把 Key 放进源码、测试、`.env.example`、前端、Git 或公开日志。发布时必须同步更新整个 `dist/`，并确认应用服务器可以出站访问 `https://fuyao.aicubes.cn`。本次没有数据库迁移，也没有改变现有登录、上传与云服务配置。
 
 服务端路由有意从原来的期货缓存接口扩展出只读的股票行情接口，因此同步更新了 `contract.json` 中的 `server_py_sha256`、`server_py_bytes` 及 `_note_server`。既有 `/.cloud` 排除、SPA 兜底与期货接口保持原样。上线前执行 `python verify.py` 和 `python -m unittest discover -s tests -p test_stocks.py -v`。线上用浏览器登录后打开“股票工作台”，核对行情时间、添加和移除股票、自动更新与服务端未配置 Key 时的错误提示。
 
