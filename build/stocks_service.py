@@ -11,6 +11,35 @@ CODE = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
 _cache = {}
 _lock = threading.Lock()
 TTL = 30
+_NAMES = {}
+_names_loaded = False
+
+
+def _names(key, fetch=None):
+    """A 股中文名字典，进程内只取一次。
+
+    ponytail: 一次 1.2MB 换整本字典（比逐只搜索省 N 次往返，且新加自选不用再请求）；
+    若某天 A 股数量超过 10000 只，多出来的会显示「—」，届时改成分页即可。
+    """
+    global _names_loaded
+    if _names_loaded:
+        return _NAMES
+    url = "https://fuyao.aicubes.cn/api/meta/tickers/list?" + urlencode({"asset_type": "a-share", "limit": 10000})
+    request = Request(url, headers={"X-api-key": key})
+    try:
+        if fetch is None:
+            def fetch(req):
+                with urlopen(req, timeout=20) as response:
+                    return json.load(response)
+        result = fetch(request)
+        for row in (result.get("data") or {}).get("item") or []:
+            if row.get("thscode") and row.get("name"):
+                _NAMES[row["thscode"]] = row["name"]
+        _names_loaded = bool(_NAMES)
+    except Exception:
+        pass  # 拿不到名字不该把行情一起弄挂，前端显示「—」
+    return _NAMES
+
 _KEY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".hithink_key")
 
 
@@ -54,4 +83,6 @@ def snapshot(codes, fetch=None):
                                           "price_change_ratio_pct": item.get("price_change_ratio_pct"),
                                           "volume": item.get("volume"), "turnover": item.get("turnover"),
                                           "timestamp": stamp})
-        return {"items": [_cache[c][1] for c in codes if c in _cache], "cached_seconds": TTL}
+    names = _names(key, fetch)
+    return {"items": [dict(_cache[c][1], name=names.get(c, "")) for c in codes if c in _cache],
+            "cached_seconds": TTL}

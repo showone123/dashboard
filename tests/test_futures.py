@@ -247,7 +247,11 @@ class RoutingTests(unittest.TestCase):
                 self.assertIn(b'<!DOCTYPE html>', response.read(100))
 
     def test_hithink_key_file_is_never_exposed(self):
+        # ⚠️ 这个路径就是**部署用的真文件**：测试必须原样还原，否则跑一遍测试
+        #    就会把 dist/.hithink_key 删掉 —— 之后部署上去的包没有密钥，线上恒 503，
+        #    而且报错离原因（跑过测试）很远，极难查。
         key_file = ROOT / 'dist/.hithink_key'
+        saved = key_file.read_bytes() if key_file.exists() else None
         key_file.write_text('test-only-secret', encoding='utf-8')
         try:
             with urlopen(self.url + '/.hithink_key') as response:
@@ -255,7 +259,10 @@ class RoutingTests(unittest.TestCase):
             self.assertIn(b'<!DOCTYPE html>', body)
             self.assertNotIn(b'test-only-secret', body)
         finally:
-            key_file.unlink(missing_ok=True)
+            if saved is None:
+                key_file.unlink(missing_ok=True)
+            else:
+                key_file.write_bytes(saved)
 
 
 if __name__ == '__main__':
