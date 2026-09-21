@@ -50,6 +50,7 @@ __APPCSS__
   <button class="theme-toggle auth-theme-toggle" type="button" data-theme-toggle aria-label="切换明暗主题">
     <span class="theme-sun">☼</span><span class="theme-moon">◐</span><span data-theme-label>浅色</span>
   </button>
+  <button class="meditation-toggle auth-meditation-toggle" type="button" data-meditation-open aria-label="进入冥想模式"><span>◌</span> 静心</button>
   <div class="auth-story">
     <div class="auth-eyebrow">INTELLIGENT DATA WORKSPACE</div>
     <h1>让复杂数据，<br/><span>自然汇聚成答案。</span></h1>
@@ -132,6 +133,7 @@ __APPCSS__
       <div class="workspace-crumb"><span>工作台</span><i>/</i><b id="workspaceCrumb">总览</b></div>
       <button class="workspace-search" id="btnQuickSearch" type="button"><span>⌕</span><span>搜索账户、MAC 或功能…</span><kbd>Ctrl K</kbd></button>
       <div class="me">
+      <button class="meditation-toggle" type="button" data-meditation-open aria-label="进入冥想模式"><span>◌</span> 静心</button>
       <button class="theme-toggle app-theme-toggle" type="button" data-theme-toggle aria-label="切换明暗主题">
         <span class="theme-sun">☼</span><span class="theme-moon">◐</span><span data-theme-label>浅色</span>
       </button>
@@ -416,6 +418,18 @@ __APPCSS__
 </div>
 
 <div class="toast" id="toast"></div>
+<div class="meditation-view hidden" id="meditationView" role="dialog" aria-modal="true" aria-label="冥想模式">
+  <canvas class="particle-canvas" id="meditationParticles" aria-hidden="true"></canvas>
+  <div class="meditation-brand"><img class="brand-companion" src="/assets/fluxdesk-companion.png" alt=""/><div class="brand-wordmark">Flux<span>Desk</span></div></div>
+  <button class="meditation-close" id="btnMeditationClose" type="button">返回 <kbd>Esc</kbd></button>
+  <div class="meditation-copy" aria-live="polite">
+    <div class="meditation-mark">◌</div>
+    <p id="meditationZh">把注意力放回呼吸。</p>
+    <small id="meditationEn">Return to your breath.</small>
+    <div class="meditation-progress" id="meditationProgress"></div>
+  </div>
+</div>
+
 <div class="busy" id="busy"><div class="spin"></div><div class="txt" id="busyTxt">处理中…</div></div>
 
 <!-- ==================== 成果导出（二级界面） ==================== -->

@@ -125,8 +125,8 @@
   function toggleTheme() {
     applyTheme(currentTheme() === 'dark' ? 'light' : 'dark', true);
   }
-  function createLoginParticles() {
-    var canvas = $('authParticles');
+  function createLoginParticles(canvasId) {
+    var canvas = $(canvasId || 'authParticles');
     if (!canvas || !canvas.getContext || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     var ctx = canvas.getContext('2d'), particles = [], w = 0, h = 0, dpr = 1;
     var mouse = { x: -9999, y: -9999 };
@@ -202,6 +202,33 @@
       window.requestAnimationFrame(draw);
     }
     window.addEventListener('resize', resize); resize(); window.requestAnimationFrame(draw);
+  }
+
+  var meditation = { index: 0, timer: null, ready: false };
+  var meditationLines = [
+    ['把注意力放回呼吸。', 'Return to your breath.'],
+    ['此刻，不需要解决任何事。', 'Nothing needs to be solved right now.'],
+    ['让念头经过，不必跟随。', 'Let thoughts pass without following.'],
+    ['慢一点，也是在前进。', 'Slowing down is still moving forward.'],
+    ['你已经抵达此刻。', 'You have arrived in this moment.'],
+    ['吸气，留白；呼气，放下。', 'Breathe in space. Breathe out and let go.']
+  ];
+  function showMeditationLine(index) {
+    meditation.index = index % meditationLines.length;
+    $('meditationZh').textContent = meditationLines[meditation.index][0];
+    $('meditationEn').textContent = meditationLines[meditation.index][1];
+    $('meditationProgress').querySelectorAll('i').forEach(function (dot, i) { dot.classList.toggle('active', i === meditation.index); });
+  }
+  function openMeditation() {
+    if (!meditation.ready) { createLoginParticles('meditationParticles'); meditation.ready = true; }
+    if (!$('meditationProgress').children.length) meditationLines.forEach(function () { $('meditationProgress').appendChild(document.createElement('i')); });
+    showMeditationLine(Math.floor(Math.random() * meditationLines.length));
+    show('meditationView'); document.body.classList.add('meditation-active');
+    clearInterval(meditation.timer); meditation.timer = setInterval(function () { showMeditationLine(meditation.index + 1); }, 9000);
+  }
+  function closeMeditation() {
+    hide('meditationView'); document.body.classList.remove('meditation-active');
+    clearInterval(meditation.timer); meditation.timer = null;
   }
 
   /* ==================== 认证界面 ==================== */
@@ -1828,6 +1855,9 @@
     syncThemeControls();
     createLoginParticles();
     createAmbientParticles();
+    document.querySelectorAll('[data-meditation-open]').forEach(function (button) { button.addEventListener('click', openMeditation); });
+    $('btnMeditationClose').addEventListener('click', closeMeditation);
+    document.addEventListener('keydown', function (event) { if (event.key === 'Escape' && !$('meditationView').classList.contains('hidden')) closeMeditation(); });
     $('btnSidebarToggle').addEventListener('click', function () {
       var collapsed = $('viewApp').classList.toggle('sidebar-collapsed');
       this.setAttribute('aria-label', collapsed ? '展开侧边栏' : '收起侧边栏');
