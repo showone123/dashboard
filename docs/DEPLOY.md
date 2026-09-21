@@ -1,5 +1,9 @@
 # 部署与重新部署
 
+## 股票工作台与金融数据查询（2026-09-21）
+
+本次在现有单端口服务中增加 `GET /api/stocks` 和 `POST /api/finance/query`。两者只代理同花顺公开接口，API Key 仅从服务端环境变量 `HITHINK_FINANCE_API_KEY` 读取；发布前必须在 WorkBuddy 服务端配置该变量，并确认允许出站访问 `https://fuyao.aicubes.cn`。浏览器请求必须携带 `X-FluxDesk-Request: 1`，服务端不返回 CORS 许可头。发布时需整体部署重建后的 `dist/`，其中包含新增的服务文件和接口目录。没有数据库迁移，既有 `/.cloud` 排除、SPA 兜底、登录与文件存储配置不变。详细接口范围与验收方式见 `docs/STOCKS.md`。
+
 ## 0. 先回答「GitHub 自动部署」——**不支持**
 
 | 想做的事 | 是否支持 | 说明 |

@@ -12,6 +12,8 @@
 import json
 from urllib.parse import parse_qs, urlsplit
 from futures_service import Cache
+from stocks_service import snapshot
+from financial_service import query
 import mimetypes
 import os
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -19,7 +21,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 ROOT = os.path.dirname(os.path.abspath(__file__))
 INDEX = os.path.join(ROOT, "index.html")
 # 服务端自身文件与隐藏文件不做静态暴露
-BLOCKED = {"server.py", "futures_service.py"}
+BLOCKED = {"server.py", "futures_service.py", "stocks_service.py", "financial_service.py"}
 CACHE = Cache(os.environ.get("FUTURES_CACHE_DIR", os.path.join(ROOT, "..", ".futures-cache")),
               os.path.join(ROOT, "futures_seed.json"))
 
@@ -112,6 +114,27 @@ class Handler(SimpleHTTPRequestHandler):
         self._write("application/json; charset=utf-8", json.dumps(payload, ensure_ascii=False).encode("utf-8"))
 
     def do_POST(self):
+        if urlsplit(self.path).path == "/api/finance/query":
+            if self.headers.get("X-FluxDesk-Request") != "1":
+                self.send_error(403)
+                return
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 0 < length <= 8192:
+                    raise ValueError("Invalid request size")
+                body = json.loads(self.rfile.read(length))
+                payload = query(body.get("id"), body.get("params"), self.client_address[0])
+            except (ValueError, TypeError, AttributeError):
+                self.send_error(400, "Invalid finance query")
+                return
+            except RuntimeError:
+                self.send_error(503, "Finance data unavailable")
+                return
+            except Exception:
+                self.send_error(503, "Finance data unavailable")
+                return
+            self._write("application/json; charset=utf-8", json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+            return
         if urlsplit(self.path).path != "/api/futures/refresh":
             self.send_error(404)
             return
@@ -130,6 +153,21 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if urlsplit(self.path).path == "/api/futures":
             return self._futures()
+        if urlsplit(self.path).path == "/api/stocks":
+            if self.headers.get("X-FluxDesk-Request") != "1":
+                self.send_error(403)
+                return
+            codes = parse_qs(urlsplit(self.path).query).get("codes", [""])[0].split(",")
+            try:
+                payload = snapshot(codes)
+            except ValueError:
+                self.send_error(400, "Invalid stock codes")
+                return
+            except Exception:
+                self.send_error(503, "Stock data unavailable")
+                return
+            self._write("application/json; charset=utf-8", json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+            return
         self._handle()
 
     def do_HEAD(self):

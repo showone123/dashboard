@@ -1,0 +1,1605 @@
+[
+  {
+    "id": "a-share-prices-snapshot",
+    "domain": "a-share",
+    "group": "行情",
+    "title": "行情快照",
+    "path": "/api/a-share/prices/snapshot",
+    "params": [
+      {
+        "name": "thscodes",
+        "required": false,
+        "description": "逗号分隔的 thscode 列表，如 600519.SH,000001.SZ。给定时忽略分页参数。"
+      },
+      {
+        "name": "limit",
+        "required": false,
+        "description": "分页大小，仅在 thscodes 省略时生效。"
+      },
+      {
+        "name": "offset",
+        "required": false,
+        "description": "分页偏移，仅在 thscodes 省略时生效。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/a-share/prices-snapshot.md"
+  },
+  {
+    "id": "a-share-prices-historical",
+    "domain": "a-share",
+    "group": "行情",
+    "title": "历史 K 线",
+    "path": "/api/a-share/prices/historical",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "单只标的 thscode，不接受逗号。多标的请分多次请求。"
+      },
+      {
+        "name": "interval",
+        "required": true,
+        "description": "K 线周期，当前仅支持 1d(日线)。"
+      },
+      {
+        "name": "start",
+        "required": true,
+        "description": "起始时间，毫秒 Unix 时间戳。缺失返回 code=1001。"
+      },
+      {
+        "name": "end",
+        "required": true,
+        "description": "结束时间，毫秒 Unix 时间戳。end - start 超过 10 年返回 code=1003。"
+      },
+      {
+        "name": "adjust",
+        "required": false,
+        "description": "复权方式：none / forward(前复权) / backward(后复权)。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/a-share/prices-historical.md"
+  },
+  {
+    "id": "a-share-financials-indicators",
+    "domain": "a-share",
+    "group": "财务报表与指标",
+    "title": "财务指标数据",
+    "path": "/api/a-share/financials/indicators",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "单只标的 thscode，含交易所后缀，如 300033.SZ。"
+      },
+      {
+        "name": "report",
+        "required": true,
+        "description": "报告期，示例 2025-1；格式见上方通用约定。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/a-share/financials-indicators.md"
+  },
+  {
+    "id": "a-share-financials-income-statements",
+    "domain": "a-share",
+    "group": "财务报表与指标",
+    "title": "利润表",
+    "path": "/api/a-share/financials/income-statements",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "单只标的 thscode，不接受逗号；含交易所后缀。"
+      },
+      {
+        "name": "period",
+        "required": true,
+        "description": "annual（仅 Q4 报告期）/ quarterly（每个季度末）。"
+      },
+      {
+        "name": "limit",
+        "required": false,
+        "description": "最近 N 期模式，范围 [1, 20]；与 start / end 互斥。"
+      },
+      {
+        "name": "start",
+        "required": false,
+        "description": "时间区间模式起始毫秒戳，需与 end 同传。"
+      },
+      {
+        "name": "end",
+        "required": false,
+        "description": "时间区间模式结束毫秒戳，需满足 end >= start。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/a-share/financials-income-statements.md"
+  },
+  {
+    "id": "a-share-financials-balance-sheets",
+    "domain": "a-share",
+    "group": "财务报表与指标",
+    "title": "资产负债表",
+    "path": "/api/a-share/financials/balance-sheets",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "单只标的 thscode，不接受逗号；含交易所后缀。"
+      },
+      {
+        "name": "period",
+        "required": true,
+        "description": "annual（仅 Q4 报告期）/ quarterly（每个季度末）。"
+      },
+      {
+        "name": "limit",
+        "required": false,
+        "description": "最近 N 期模式，范围 [1, 20]；与 start / end 互斥。"
+      },
+      {
+        "name": "start",
+        "required": false,
+        "description": "时间区间模式起始毫秒戳，需与 end 同传。"
+      },
+      {
+        "name": "end",
+        "required": false,
+        "description": "时间区间模式结束毫秒戳，需满足 end >= start。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/a-share/financials-balance-sheets.md"
+  },
+  {
+    "id": "a-share-financials-cash-flow-statements",
+    "domain": "a-share",
+    "group": "财务报表与指标",
+    "title": "现金流量表",
+    "path": "/api/a-share/financials/cash-flow-statements",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "单只标的 thscode，不接受逗号；含交易所后缀。"
+      },
+      {
+        "name": "period",
+        "required": true,
+        "description": "annual（仅 Q4 报告期）/ quarterly（每个季度末）。"
+      },
+      {
+        "name": "limit",
+        "required": false,
+        "description": "最近 N 期模式，范围 [1, 20]；与 start / end 互斥。"
+      },
+      {
+        "name": "start",
+        "required": false,
+        "description": "时间区间模式起始毫秒戳，需与 end 同传。"
+      },
+      {
+        "name": "end",
+        "required": false,
+        "description": "时间区间模式结束毫秒戳，需满足 end >= start。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/a-share/financials-cash-flow-statements.md"
+  },
+  {
+    "id": "a-share-special-data-dragon-tiger-list",
+    "domain": "a-share",
+    "group": "特色数据",
+    "title": "龙虎榜数据",
+    "path": "/api/a-share/special-data/dragon-tiger-list",
+    "params": [
+      {
+        "name": "board_type",
+        "required": false,
+        "description": "榜单类型：all 全部 / org 机构榜 / hot_money 游资榜。"
+      },
+      {
+        "name": "date",
+        "required": false,
+        "description": "目标交易日，格式 yyyy-MM-dd；只支持一年内数据。显式传入非交易日返回 code=1002。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/a-share/special-data-dragon-tiger-list.md"
+  },
+  {
+    "id": "a-share-special-data-anomaly-analysis-list",
+    "domain": "a-share",
+    "group": "特色数据",
+    "title": "个股异动原因列表",
+    "path": "/api/a-share/special-data/anomaly-analysis-list",
+    "params": [
+      {
+        "name": "tag_codes",
+        "required": false,
+        "description": "异动标签，逗号分隔，多个值为 OR 关系；大小写不敏感，重复值自动去重。合法值见下方标签表。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/a-share/special-data-anomaly-analysis-list.md"
+  },
+  {
+    "id": "a-share-special-data-anomaly-analysis-stock",
+    "domain": "a-share",
+    "group": "特色数据",
+    "title": "按股票查询个股异动原因",
+    "path": "/api/a-share/special-data/anomaly-analysis-stock",
+    "params": [
+      {
+        "name": "thscodes",
+        "required": true,
+        "description": "逗号分隔的同花顺代码列表，支持 SH / SZ / BJ 后缀，大小写不敏感；去重前最多 50 个 token。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/a-share/special-data-anomaly-analysis-stock.md"
+  },
+  {
+    "id": "a-share-special-data-skyrocket-list",
+    "domain": "a-share",
+    "group": "特色数据",
+    "title": "飙升榜",
+    "path": "/api/a-share/special-data/skyrocket-list",
+    "params": [
+      {
+        "name": "period",
+        "required": false,
+        "description": "榜单周期：day 日榜 / hour 小时榜。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/a-share/special-data-skyrocket-list.md"
+  },
+  {
+    "id": "a-share-special-data-hot-stock-list",
+    "domain": "a-share",
+    "group": "特色数据",
+    "title": "A股热股榜单",
+    "path": "/api/a-share/special-data/hot-stock-list",
+    "params": [
+      {
+        "name": "period",
+        "required": false,
+        "description": "榜单周期：day 24 小时级别 / hour 小时级别。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/a-share/special-data-hot-stock-list.md"
+  },
+  {
+    "id": "a-share-special-data-hot-stock-list-history",
+    "domain": "a-share",
+    "group": "特色数据",
+    "title": "历史热股排行",
+    "path": "/api/a-share/special-data/hot-stock-list-history",
+    "params": [
+      {
+        "name": "date",
+        "required": true,
+        "description": "目标自然日，格式 yyyy-MM-dd；只支持一年内数据。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/a-share/special-data-hot-stock-list-history.md"
+  },
+  {
+    "id": "a-share-special-data-hot-stock-rank-trend",
+    "domain": "a-share",
+    "group": "特色数据",
+    "title": "个股排名走势",
+    "path": "/api/a-share/special-data/hot-stock-rank-trend",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "单只 A 股标的，含交易所后缀，例如 300034.SZ。"
+      },
+      {
+        "name": "start_date",
+        "required": true,
+        "description": "起始自然日，格式 yyyy-MM-dd。"
+      },
+      {
+        "name": "end_date",
+        "required": true,
+        "description": "结束自然日，格式 yyyy-MM-dd；需大于等于 start_date。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/a-share/special-data-hot-stock-rank-trend.md"
+  },
+  {
+    "id": "a-share-special-data-limit-up-pool",
+    "domain": "a-share",
+    "group": "特色数据",
+    "title": "涨停股票池",
+    "path": "/api/a-share/special-data/limit-up-pool",
+    "params": [
+      {
+        "name": "date_ms",
+        "required": false,
+        "description": "查询交易日 Unix 毫秒戳（Asia/Shanghai 00:00:00）；省略时回退到服务端当前自然日。"
+      },
+      {
+        "name": "page",
+        "required": false,
+        "description": "页码，必须 >= 1。"
+      },
+      {
+        "name": "size",
+        "required": false,
+        "description": "分页大小，取值范围 1 到 200。"
+      },
+      {
+        "name": "sort_field",
+        "required": false,
+        "description": "排序字段：last_price / continue_day_cnt / seal_money / limit_up_time。"
+      },
+      {
+        "name": "sort_dir",
+        "required": false,
+        "description": "排序方向：asc / desc。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/a-share/special-data-limit-up-pool.md"
+  },
+  {
+    "id": "a-share-special-data-limit-down-pool",
+    "domain": "a-share",
+    "group": "特色数据",
+    "title": "跌停股票池",
+    "path": "/api/a-share/special-data/limit-down-pool",
+    "params": [
+      {
+        "name": "date_ms",
+        "required": false,
+        "description": "交易日的上海时区零点毫秒时间戳。"
+      },
+      {
+        "name": "page",
+        "required": false,
+        "description": "页码，从 1 开始。"
+      },
+      {
+        "name": "size",
+        "required": false,
+        "description": "单页条数，范围 1..200。"
+      },
+      {
+        "name": "sort_field",
+        "required": false,
+        "description": "last_limit_time / first_limit_time / last_price / price_change_ratio_pct / turnover_ratio_pct。"
+      },
+      {
+        "name": "sort_dir",
+        "required": false,
+        "description": "asc / desc。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/a-share/special-data-limit-down-pool.md"
+  },
+  {
+    "id": "a-share-special-data-limit-break-pool",
+    "domain": "a-share",
+    "group": "特色数据",
+    "title": "炸板股票池",
+    "path": "/api/a-share/special-data/limit-break-pool",
+    "params": [
+      {
+        "name": "date_ms",
+        "required": false,
+        "description": "交易日的上海时区零点毫秒时间戳。"
+      },
+      {
+        "name": "page",
+        "required": false,
+        "description": "页码，从 1 开始。"
+      },
+      {
+        "name": "size",
+        "required": false,
+        "description": "单页条数，范围 1..200。"
+      },
+      {
+        "name": "sort_field",
+        "required": false,
+        "description": "price_change_ratio_pct / open_times / last_price / turnover_ratio_pct / turnover。"
+      },
+      {
+        "name": "sort_dir",
+        "required": false,
+        "description": "asc / desc。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/a-share/special-data-limit-break-pool.md"
+  },
+  {
+    "id": "a-share-special-data-limit-up-ladder",
+    "domain": "a-share",
+    "group": "特色数据",
+    "title": "连板天梯",
+    "path": "/api/a-share/special-data/limit-up-ladder",
+    "params": [],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/a-share/special-data-limit-up-ladder.md"
+  },
+  {
+    "id": "a-share-auction-snapshot",
+    "domain": "a-share",
+    "group": "集合竞价",
+    "title": "A股集合竞价快照",
+    "path": "/api/a-share/auction/snapshot",
+    "params": [
+      {
+        "name": "thscodes",
+        "required": true,
+        "description": "一个或多个 A 股 thscode，使用英文逗号分隔；单次请求当前最多 100 个，按分隔后的原始 token 数在去重前校验。服务端按请求顺序去重返回。"
+      },
+      {
+        "name": "stage",
+        "required": false,
+        "description": "live（实时阶段）或 final（终态）。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/a-share/auction-snapshot.md"
+  },
+  {
+    "id": "a-share-auction-short-term-benchmark",
+    "domain": "a-share",
+    "group": "集合竞价",
+    "title": "短线风向标竞价基准",
+    "path": "/api/a-share/auction/short-term-benchmark",
+    "params": [
+      {
+        "name": "date",
+        "required": false,
+        "description": "查询日期，格式 yyyy-MM-dd；缺失或传入空字符串时使用 Asia/Shanghai 当日，显式指定非交易日时不自动回退。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/a-share/auction-short-term-benchmark.md"
+  },
+  {
+    "id": "a-share-calendar-trading-days",
+    "domain": "a-share",
+    "group": "交易日程",
+    "title": "交易日历",
+    "path": "/api/a-share/calendar/trading-days",
+    "params": [],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/a-share/calendar-trading-days.md"
+  },
+  {
+    "id": "a-share-valuations-snapshot",
+    "domain": "a-share",
+    "group": "估值",
+    "title": "估值数据",
+    "path": "/api/a-share/valuations/snapshot",
+    "params": [
+      {
+        "name": "thscodes",
+        "required": true,
+        "description": "英文逗号分隔的 A 股 thscode 列表，如 600519.SH,000001.SZ；每项必须为六位数字加 .SH、.SZ 或 .BJ。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/a-share/valuations-snapshot.md"
+  },
+  {
+    "id": "a-share-corporate-actions-adjustment-factors",
+    "domain": "a-share",
+    "group": "公司行动",
+    "title": "除复权",
+    "path": "/api/a-share/corporate-actions/adjustment-factors",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "单只标的 thscode，不接受逗号。"
+      },
+      {
+        "name": "from",
+        "required": false,
+        "description": "事件起始日，格式 YYYY-MM-DD。"
+      },
+      {
+        "name": "to",
+        "required": false,
+        "description": "事件截止日，格式 YYYY-MM-DD。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/a-share/corporate-actions-adjustment-factors.md"
+  },
+  {
+    "id": "fund-companies-detail",
+    "domain": "fund",
+    "group": "资料与标识",
+    "title": "基金公司详情",
+    "path": "/api/fund/companies/detail",
+    "params": [
+      {
+        "name": "company_id",
+        "required": true,
+        "description": "基金公司 ID，可从基金基本资料的 company_id 获取。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/companies-detail.md"
+  },
+  {
+    "id": "fund-profile-detail",
+    "domain": "fund",
+    "group": "资料与标识",
+    "title": "基金基本资料",
+    "path": "/api/fund/profile/detail",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "完整基金 thscode，必须保留市场后缀，如 025480.OF / 510300.SH。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/profile-detail.md"
+  },
+  {
+    "id": "fund-market-snapshot",
+    "domain": "fund",
+    "group": "行情",
+    "title": "场内基金行情快照",
+    "path": "/api/fund/market/snapshot",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "单只 ETF 的完整 thscode，必须保留市场后缀，如 510300.SH；不接受逗号分隔的多个值。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/market-snapshot.md"
+  },
+  {
+    "id": "fund-market-historical",
+    "domain": "fund",
+    "group": "行情",
+    "title": "场内基金历史日线行情",
+    "path": "/api/fund/market/historical",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "单只 ETF 的完整 thscode，必须保留市场后缀；不接受逗号分隔的多个值。"
+      },
+      {
+        "name": "interval",
+        "required": false,
+        "description": "K 线周期，当前仅支持 1d（日线）。"
+      },
+      {
+        "name": "start",
+        "required": true,
+        "description": "起始时间，毫秒级 Unix 时间戳。"
+      },
+      {
+        "name": "end",
+        "required": true,
+        "description": "结束时间，毫秒级 Unix 时间戳；必须不早于 start，且窗口最长 5 个自然年。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/market-historical.md"
+  },
+  {
+    "id": "fund-financials-indicators",
+    "domain": "fund",
+    "group": "财务报表与指标",
+    "title": "基金财务指标",
+    "path": "/api/fund/financials/indicators",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "完整基金 thscode，必须保留市场后缀。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/financials-indicators.md"
+  },
+  {
+    "id": "fund-financials-income-statements",
+    "domain": "fund",
+    "group": "财务报表与指标",
+    "title": "基金利润表",
+    "path": "/api/fund/financials/income-statements",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "完整基金 thscode，必须保留市场后缀。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/financials-income-statements.md"
+  },
+  {
+    "id": "fund-financials-balance-sheets",
+    "domain": "fund",
+    "group": "财务报表与指标",
+    "title": "基金资产负债表",
+    "path": "/api/fund/financials/balance-sheets",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "完整基金 thscode，必须保留市场后缀。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/financials-balance-sheets.md"
+  },
+  {
+    "id": "fund-performance-nav",
+    "domain": "fund",
+    "group": "净值与业绩",
+    "title": "基金净值",
+    "path": "/api/fund/performance/nav",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "完整基金 thscode，必须保留市场后缀。"
+      },
+      {
+        "name": "range",
+        "required": false,
+        "description": "week / month / tmonth / hyear / year / twoyear / tyear / fyear。"
+      },
+      {
+        "name": "nav_type",
+        "required": false,
+        "description": "unit（单位净值）/ adj（复权净值）/ unit,adj（同时返回）。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/performance-nav.md"
+  },
+  {
+    "id": "fund-performance-returns",
+    "domain": "fund",
+    "group": "净值与业绩",
+    "title": "基金区间收益",
+    "path": "/api/fund/performance/returns",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "完整基金 thscode，必须保留市场后缀。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/performance-returns.md"
+  },
+  {
+    "id": "fund-performance-indicators-historical",
+    "domain": "fund",
+    "group": "净值与业绩",
+    "title": "基金历史业绩指标",
+    "path": "/api/fund/performance/indicators-historical",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "完整基金 thscode。"
+      },
+      {
+        "name": "start",
+        "required": true,
+        "description": "起始时间，毫秒 Unix 时间戳。"
+      },
+      {
+        "name": "end",
+        "required": true,
+        "description": "结束时间，毫秒 Unix 时间戳。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/performance-indicators-historical.md"
+  },
+  {
+    "id": "fund-performance-drawdowns",
+    "domain": "fund",
+    "group": "净值与业绩",
+    "title": "基金最大回撤",
+    "path": "/api/fund/performance/drawdowns",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "完整基金 thscode。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/performance-drawdowns.md"
+  },
+  {
+    "id": "fund-portfolio-holdings",
+    "domain": "fund",
+    "group": "持仓与配置",
+    "title": "基金重仓持仓",
+    "path": "/api/fund/portfolio/holdings",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "完整基金 thscode，必须保留市场后缀，如 025480.OF。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/portfolio-holdings.md"
+  },
+  {
+    "id": "fund-portfolio-stock-history",
+    "domain": "fund",
+    "group": "持仓与配置",
+    "title": "基金历史股票持仓",
+    "path": "/api/fund/portfolio/stock-history",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "完整基金 thscode。"
+      },
+      {
+        "name": "report_type",
+        "required": true,
+        "description": "报告类型。"
+      },
+      {
+        "name": "end_date",
+        "required": true,
+        "description": "报告截止日期，格式 yyyy-MM-dd。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/portfolio-stock-history.md"
+  },
+  {
+    "id": "fund-portfolio-bond-history",
+    "domain": "fund",
+    "group": "持仓与配置",
+    "title": "基金历史债券持仓",
+    "path": "/api/fund/portfolio/bond-history",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "完整基金 thscode。"
+      },
+      {
+        "name": "report_type",
+        "required": true,
+        "description": "报告类型。"
+      },
+      {
+        "name": "end_date",
+        "required": true,
+        "description": "报告截止日期，格式 yyyy-MM-dd。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/portfolio-bond-history.md"
+  },
+  {
+    "id": "fund-portfolio-stock-report-dates",
+    "domain": "fund",
+    "group": "持仓与配置",
+    "title": "基金股票持仓报告日期",
+    "path": "/api/fund/portfolio/stock-report-dates",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "完整基金 thscode。"
+      },
+      {
+        "name": "report_type",
+        "required": false,
+        "description": "报告类型。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/portfolio-stock-report-dates.md"
+  },
+  {
+    "id": "fund-portfolio-bond-report-dates",
+    "domain": "fund",
+    "group": "持仓与配置",
+    "title": "基金债券持仓报告日期",
+    "path": "/api/fund/portfolio/bond-report-dates",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "完整基金 thscode。"
+      },
+      {
+        "name": "report_type",
+        "required": false,
+        "description": "报告类型。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/portfolio-bond-report-dates.md"
+  },
+  {
+    "id": "fund-portfolio-asset-allocation",
+    "domain": "fund",
+    "group": "持仓与配置",
+    "title": "基金资产配置",
+    "path": "/api/fund/portfolio/asset-allocation",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "完整基金 thscode。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/portfolio-asset-allocation.md"
+  },
+  {
+    "id": "fund-portfolio-industry-allocation",
+    "domain": "fund",
+    "group": "持仓与配置",
+    "title": "基金行业配置",
+    "path": "/api/fund/portfolio/industry-allocation",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "完整基金 thscode。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/portfolio-industry-allocation.md"
+  },
+  {
+    "id": "fund-holders-detail",
+    "domain": "fund",
+    "group": "持有人",
+    "title": "基金持有人结构",
+    "path": "/api/fund/holders/detail",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "完整基金 thscode，必须保留市场后缀。"
+      },
+      {
+        "name": "merge_scope",
+        "required": false,
+        "description": "all（分别返回合并/独立份额的最新记录）/ merged（A/C 等份额合并披露）/ separate（当前份额独立披露）。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/holders-detail.md"
+  },
+  {
+    "id": "fund-holders-top",
+    "domain": "fund",
+    "group": "持有人",
+    "title": "基金前十大持有人",
+    "path": "/api/fund/holders/top",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "完整基金 thscode。"
+      },
+      {
+        "name": "limit",
+        "required": false,
+        "description": "返回条数，最大为 10。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/holders-top.md"
+  },
+  {
+    "id": "fund-managers-investment-style",
+    "domain": "fund",
+    "group": "基金经理",
+    "title": "投资风格",
+    "path": "/api/fund/managers/investment-style",
+    "params": [
+      {
+        "name": "manager_id",
+        "required": true,
+        "description": "基金经理 ID。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/managers-investment-style.md"
+  },
+  {
+    "id": "fund-managers-performance",
+    "domain": "fund",
+    "group": "基金经理",
+    "title": "基金经理业绩",
+    "path": "/api/fund/managers/performance",
+    "params": [
+      {
+        "name": "manager_id",
+        "required": true,
+        "description": "基金经理 ID。"
+      },
+      {
+        "name": "range",
+        "required": true,
+        "description": "month / tmonth / year / nowyear / now。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/managers-performance.md"
+  },
+  {
+    "id": "fund-managers-experience",
+    "domain": "fund",
+    "group": "基金经理",
+    "title": "从业经历",
+    "path": "/api/fund/managers/experience",
+    "params": [
+      {
+        "name": "manager_id",
+        "required": true,
+        "description": "基金经理 ID。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/managers-experience.md"
+  },
+  {
+    "id": "fund-managers-detail",
+    "domain": "fund",
+    "group": "基金经理",
+    "title": "基金经理详情",
+    "path": "/api/fund/managers/detail",
+    "params": [
+      {
+        "name": "manager_id",
+        "required": true,
+        "description": "基金经理 ID。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/managers-detail.md"
+  },
+  {
+    "id": "fund-backtest-result",
+    "domain": "fund",
+    "group": "在线回测",
+    "title": "基金在线回测",
+    "path": "/api/fund/backtest/result",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "含市场后缀的完整基金代码，例如 000001.OF。"
+      },
+      {
+        "name": "buy_conditions",
+        "required": true,
+        "description": "买入条件 JSON 字符串，必须是对象或数组。"
+      },
+      {
+        "name": "sell_conditions",
+        "required": true,
+        "description": "卖出条件 JSON 字符串，必须是对象或数组。"
+      },
+      {
+        "name": "buy_frequency_type",
+        "required": true,
+        "description": "买入频率，具体值由上游判定。"
+      },
+      {
+        "name": "max_buy_times",
+        "required": true,
+        "description": "最大买入次数。"
+      },
+      {
+        "name": "per_buy_amount",
+        "required": true,
+        "description": "每次买入金额。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/backtest-result.md"
+  },
+  {
+    "id": "fund-backtest-indicators",
+    "domain": "fund",
+    "group": "在线回测",
+    "title": "基金回测可用指标",
+    "path": "/api/fund/backtest/indicators",
+    "params": [],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/backtest-indicators.md"
+  },
+  {
+    "id": "fund-indicators-line",
+    "domain": "fund",
+    "group": "通用指标",
+    "title": "基金画线指标",
+    "path": "/api/fund/indicators/line",
+    "params": [
+      {
+        "name": "indexes",
+        "required": true,
+        "description": "指标分组 JSON 数组。每组必须包含完整代码数组 thscodes 和指标数组 index_info；index_info[] 必须包含字符串 index_id，可按指标定义提供 attribute。"
+      },
+      {
+        "name": "time_range",
+        "required": true,
+        "description": "时间范围 JSON 对象。time_type 字符串必填；start、end 为 Unix 毫秒整数，offset 为整数周期偏移。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/indicators-line.md"
+  },
+  {
+    "id": "fund-indicators-table",
+    "domain": "fund",
+    "group": "通用指标",
+    "title": "基金表格指标",
+    "path": "/api/fund/indicators/table",
+    "params": [
+      {
+        "name": "code_selectors",
+        "required": false,
+        "description": "代码选择器 JSON 对象。stock_code、fund_code 类型必须使用完整代码数组 thscodes；其它实体类型使用 values。"
+      },
+      {
+        "name": "indexes",
+        "required": false,
+        "description": "指标 JSON 数组。index_id 字符串必填；timestamp 可选，正数为 Unix 毫秒，0 为最新位置，负数为位置偏移；attribute 按指标定义。"
+      },
+      {
+        "name": "page_info",
+        "required": false,
+        "description": "分页 JSON 对象。page_begin、page_size、code_begin、code_page_size 均为可选整数，起点为 0。"
+      },
+      {
+        "name": "sort",
+        "required": false,
+        "description": "排序 JSON 数组。每项的 idx 为指标下标整数，type 为排序方向字符串。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/indicators-table.md"
+  },
+  {
+    "id": "fund-quota-summary",
+    "domain": "fund",
+    "group": "QDII 额度",
+    "title": "QDII额度汇总",
+    "path": "/api/fund/quota/summary",
+    "params": [
+      {
+        "name": "tab",
+        "required": true,
+        "description": "分类数组 JSON 字符串，例如 [\"nazhi100\"]。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/quota-summary.md"
+  },
+  {
+    "id": "fund-quota-list",
+    "domain": "fund",
+    "group": "QDII 额度",
+    "title": "QDII额度列表",
+    "path": "/api/fund/quota/list",
+    "params": [
+      {
+        "name": "tab",
+        "required": true,
+        "description": "分类数组 JSON 字符串。"
+      },
+      {
+        "name": "buy",
+        "required": false,
+        "description": "可购状态过滤；省略时不向上游注入默认值。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/quota-list.md"
+  },
+  {
+    "id": "fund-news-article-list",
+    "domain": "fund",
+    "group": "资讯与募集",
+    "title": "基金资讯列表",
+    "path": "/api/fund/news/article-list",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "完整基金 thscode。"
+      },
+      {
+        "name": "limit",
+        "required": false,
+        "description": "返回条数。"
+      },
+      {
+        "name": "offset",
+        "required": false,
+        "description": "不透明翻页游标；下一页应原样回传上一页的 data.offset。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/news-article-list.md"
+  },
+  {
+    "id": "fund-offerings-list",
+    "domain": "fund",
+    "group": "资讯与募集",
+    "title": "基金募集列表",
+    "path": "/api/fund/offerings/list",
+    "params": [
+      {
+        "name": "subscribe",
+        "required": true,
+        "description": "active（当前募集）或 upcoming（即将募集）。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/offerings-list.md"
+  },
+  {
+    "id": "fund-diagnostics-detail",
+    "domain": "fund",
+    "group": "诊断",
+    "title": "基金诊断详情",
+    "path": "/api/fund/diagnostics/detail",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "完整基金 thscode。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/diagnostics-detail.md"
+  },
+  {
+    "id": "fund-corporate-actions-dividends",
+    "domain": "fund",
+    "group": "公司行动",
+    "title": "基金分红记录",
+    "path": "/api/fund/corporate-actions/dividends",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "完整基金 thscode。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/fund/corporate-actions-dividends.md"
+  },
+  {
+    "id": "futures-varieties-list",
+    "domain": "futures",
+    "group": "资料与标识",
+    "title": "期货品种资料",
+    "path": "/api/futures/varieties/list",
+    "params": [],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/futures/varieties-list.md"
+  },
+  {
+    "id": "futures-contracts-detail",
+    "domain": "futures",
+    "group": "资料与标识",
+    "title": "期货合约详情",
+    "path": "/api/futures/contracts/detail",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "期货合约完整同花顺代码。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/futures/contracts-detail.md"
+  },
+  {
+    "id": "futures-prices-intraday",
+    "domain": "futures",
+    "group": "行情",
+    "title": "期货分时行情",
+    "path": "/api/futures/prices/intraday",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "期货合约完整同花顺代码。"
+      },
+      {
+        "name": "session",
+        "required": false,
+        "description": "行情阶段：pre_market-盘前、intraday-盘中、post_market-盘后；省略时使用 intraday。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/futures/prices-intraday.md"
+  },
+  {
+    "id": "futures-prices-daily",
+    "domain": "futures",
+    "group": "行情",
+    "title": "期货日K",
+    "path": "/api/futures/prices/daily",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "期货合约完整同花顺代码。"
+      },
+      {
+        "name": "start",
+        "required": false,
+        "description": "与 end 成对提供的正毫秒时间戳；两者均省略时查询最近 100 根。"
+      },
+      {
+        "name": "end",
+        "required": false,
+        "description": "与 start 成对提供，且不早于 start。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/futures/prices-daily.md"
+  },
+  {
+    "id": "futures-calendar-trading-schedule",
+    "domain": "futures",
+    "group": "交易日程",
+    "title": "期货交易日",
+    "path": "/api/futures/calendar/trading-schedule",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "期货合约完整同花顺代码。"
+      },
+      {
+        "name": "start_date",
+        "required": true,
+        "description": "开始日期，格式 yyyy-MM-dd。"
+      },
+      {
+        "name": "end_date",
+        "required": true,
+        "description": "结束日期，不早于开始日期。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/futures/calendar-trading-schedule.md"
+  },
+  {
+    "id": "futures-positions-variety-daily",
+    "domain": "futures",
+    "group": "持仓",
+    "title": "期货品种日持仓",
+    "path": "/api/futures/positions/variety-daily",
+    "params": [
+      {
+        "name": "date",
+        "required": true,
+        "description": "交易日期，格式 yyyy-MM-dd。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/futures/positions-variety-daily.md"
+  },
+  {
+    "id": "futures-positions-company-variety-daily",
+    "domain": "futures",
+    "group": "持仓",
+    "title": "期货公司品种日持仓",
+    "path": "/api/futures/positions/company-variety-daily",
+    "params": [
+      {
+        "name": "date",
+        "required": true,
+        "description": "交易日期，格式 yyyy-MM-dd。"
+      },
+      {
+        "name": "varieties",
+        "required": true,
+        "description": "1～5 个逗号分隔的大写期货品种代码。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/futures/positions-company-variety-daily.md"
+  },
+  {
+    "id": "futures-positions-contract-daily",
+    "domain": "futures",
+    "group": "持仓",
+    "title": "期货公司合约日持仓",
+    "path": "/api/futures/positions/contract-daily",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "期货合约完整同花顺代码。"
+      },
+      {
+        "name": "variety",
+        "required": true,
+        "description": "大写品种代码，须与 thscode 所属品种一致。"
+      },
+      {
+        "name": "date",
+        "required": true,
+        "description": "交易日期，格式 yyyy-MM-dd。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/futures/positions-contract-daily.md"
+  },
+  {
+    "id": "futures-positions-contract-historical",
+    "domain": "futures",
+    "group": "持仓",
+    "title": "期货公司合约历史持仓",
+    "path": "/api/futures/positions/contract-historical",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "期货合约完整同花顺代码。"
+      },
+      {
+        "name": "variety",
+        "required": true,
+        "description": "大写品种代码，须与合约一致。"
+      },
+      {
+        "name": "company",
+        "required": true,
+        "description": "期货公司名称。"
+      },
+      {
+        "name": "start_date",
+        "required": true,
+        "description": "开始日期；须位于调用日前一年内，结束日固定为调用日。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/futures/positions-contract-historical.md"
+  },
+  {
+    "id": "futures-positions-company-list",
+    "domain": "futures",
+    "group": "持仓",
+    "title": "期货公司列表",
+    "path": "/api/futures/positions/company-list",
+    "params": [],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/futures/positions-company-list.md"
+  },
+  {
+    "id": "futures-basis-main-continuous-latest",
+    "domain": "futures",
+    "group": "基差",
+    "title": "期货主连最新基差",
+    "path": "/api/futures/basis/main-continuous-latest",
+    "params": [],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/futures/basis-main-continuous-latest.md"
+  },
+  {
+    "id": "futures-basis-historical",
+    "domain": "futures",
+    "group": "基差",
+    "title": "期货历史基差",
+    "path": "/api/futures/basis/historical",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "期货合约完整同花顺代码。"
+      },
+      {
+        "name": "spot_indicator_id",
+        "required": false,
+        "description": "可选现货指标 ID；省略时使用上游默认口径。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/futures/basis-historical.md"
+  },
+  {
+    "id": "futures-warehouse-receipts-historical",
+    "domain": "futures",
+    "group": "仓单",
+    "title": "期货历史仓单",
+    "path": "/api/futures/warehouse-receipts/historical",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "期货合约完整同花顺代码。"
+      },
+      {
+        "name": "start_date",
+        "required": true,
+        "description": "开始日期，格式 yyyy-MM-dd。"
+      },
+      {
+        "name": "end_date",
+        "required": true,
+        "description": "结束日期，不早于开始日期。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/futures/warehouse-receipts-historical.md"
+  },
+  {
+    "id": "a-share-index-catalog-ths-index-list",
+    "domain": "index",
+    "group": "资料与标识",
+    "title": "同花顺指数列表",
+    "path": "/api/a-share-index/catalog/ths-index-list",
+    "params": [
+      {
+        "name": "tag",
+        "required": false,
+        "description": "标签白名单：cn_concept(A 股概念) / region(区域指数) / tszs(特色指数) / industry(行业指数)。大小写不敏感。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/index/catalog-ths-index-list.md"
+  },
+  {
+    "id": "a-share-index-constituents-ths-stock-list",
+    "domain": "index",
+    "group": "资料与标识",
+    "title": "同花顺指数成分股",
+    "path": "/api/a-share-index/constituents/ths-stock-list",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "指数 thscode，形如 {ticker}.{suffix}。入参会被 trim().toUpperCase() 标准化；不接受逗号，单次仅支持一个指数。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/index/constituents-ths-stock-list.md"
+  },
+  {
+    "id": "a-share-index-prices-snapshot",
+    "domain": "index",
+    "group": "行情",
+    "title": "指数行情快照",
+    "path": "/api/a-share-index/prices/snapshot",
+    "params": [
+      {
+        "name": "thscodes",
+        "required": true,
+        "description": "逗号分隔的指数 thscode 列表，如 000001.SH,399001.SZ,886042.TI,881101.TI。"
+      },
+      {
+        "name": "limit",
+        "required": false,
+        "description": "与 A 股行情快照签名对齐，对本接口无效。"
+      },
+      {
+        "name": "offset",
+        "required": false,
+        "description": "与 A 股行情快照签名对齐，对本接口无效。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/index/prices-snapshot.md"
+  },
+  {
+    "id": "a-share-index-prices-historical",
+    "domain": "index",
+    "group": "行情",
+    "title": "指数历史 K 线",
+    "path": "/api/a-share-index/prices/historical",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "单只指数 thscode，不接受逗号。"
+      },
+      {
+        "name": "interval",
+        "required": true,
+        "description": "K 线周期，当前仅支持 1d（日线）。"
+      },
+      {
+        "name": "start",
+        "required": true,
+        "description": "起始时间，毫秒 Unix 时间戳。"
+      },
+      {
+        "name": "end",
+        "required": true,
+        "description": "结束时间，毫秒 Unix 时间戳。end - start 超过 10 年返回 code=1003。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/index/prices-historical.md"
+  },
+  {
+    "id": "meta-tickers-list",
+    "domain": "meta",
+    "group": "资料与标识",
+    "title": "标的列表获取",
+    "path": "/api/meta/tickers/list",
+    "params": [
+      {
+        "name": "asset_type",
+        "required": false,
+        "description": "规范化资产类型，支持单值或逗号分隔多值；省略时返回全部类型。"
+      },
+      {
+        "name": "limit",
+        "required": false,
+        "description": "单页条数，最大 10000。"
+      },
+      {
+        "name": "offset",
+        "required": false,
+        "description": "分页偏移。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/meta/tickers-list.md"
+  },
+  {
+    "id": "meta-tickers-search",
+    "domain": "meta",
+    "group": "资料与标识",
+    "title": "标的检索",
+    "path": "/api/meta/tickers/search",
+    "params": [
+      {
+        "name": "q",
+        "required": true,
+        "description": "搜索关键词：完整 thscode、ticker 代码或中英文名称（支持子串匹配）。"
+      },
+      {
+        "name": "exchange",
+        "required": false,
+        "description": "交易所过滤；支持证券交易所与 CFFEX、SHFE、INE、DCE、CZCE、GFEX、SSE、SZSE。"
+      },
+      {
+        "name": "asset_type",
+        "required": false,
+        "description": "规范化资产类型，支持单值或逗号分隔多值；完整枚举见下方。"
+      },
+      {
+        "name": "limit",
+        "required": false,
+        "description": "返回上限，最大 50。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/meta/tickers-search.md"
+  },
+  {
+    "id": "options-varieties-list",
+    "domain": "options",
+    "group": "资料与标识",
+    "title": "期权品种资料",
+    "path": "/api/options/varieties/list",
+    "params": [],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/options/varieties-list.md"
+  },
+  {
+    "id": "options-contracts-detail",
+    "domain": "options",
+    "group": "资料与标识",
+    "title": "期权合约详情",
+    "path": "/api/options/contracts/detail",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "期权合约完整同花顺代码。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/options/contracts-detail.md"
+  },
+  {
+    "id": "options-prices-intraday",
+    "domain": "options",
+    "group": "行情",
+    "title": "期权分时行情",
+    "path": "/api/options/prices/intraday",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "期权合约完整同花顺代码。"
+      },
+      {
+        "name": "session",
+        "required": false,
+        "description": "行情阶段：pre_market-盘前、intraday-盘中、post_market-盘后；省略时使用 intraday。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/options/prices-intraday.md"
+  },
+  {
+    "id": "options-prices-daily",
+    "domain": "options",
+    "group": "行情",
+    "title": "期权日K",
+    "path": "/api/options/prices/daily",
+    "params": [
+      {
+        "name": "thscode",
+        "required": true,
+        "description": "期权合约完整同花顺代码。"
+      },
+      {
+        "name": "start",
+        "required": false,
+        "description": "与 end 成对提供的正毫秒时间戳；两者均省略时查询最近 100 根。"
+      },
+      {
+        "name": "end",
+        "required": false,
+        "description": "与 start 成对提供的正毫秒时间戳，且不早于 start。"
+      }
+    ],
+    "docs": "https://github.com/HiThink-Tech/Financial-API/blob/main/docs/api/options/prices-daily.md"
+  }
+]

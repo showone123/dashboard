@@ -65,4 +65,7 @@ desktop.ini
 # Generated futures runtime and private on-disk cache
 /dist/futures_service.py
 /dist/futures_seed.json
+/dist/stocks_service.py
+/dist/financial_service.py
+/dist/financial_catalog.json
 /.futures-cache/

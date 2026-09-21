@@ -12,12 +12,12 @@ def rd(n):
 
 
 theme = rd("theme.css")
-appcss = rd("app.css") + "\n" + rd("futures.css")
+appcss = rd("app.css") + "\n" + rd("futures.css") + "\n" + rd("stocks.css") + "\n" + rd("financial.css")
 render = rd("render.js")
 parser = rd("parser.js")
 risk_parser = rd("risk_parser.js")
 exporter = rd("exporter.js")
-appjs = rd("futures.js") + "\n" + rd("app.js")
+appjs = rd("futures.js") + "\n" + rd("financial.js") + "\n" + rd("stocks.js") + "\n" + rd("app.js")
 seed_raw = rd("copper_data.json")
 # 内嵌 JSON 里不能出现 </script>
 seed_raw = seed_raw.replace("<", "\\u003c")
@@ -112,6 +112,7 @@ __APPCSS__
       <button class="app-tab nav-child" data-tab="upload" title="数据中心" type="button"><span class="nav-glyph">⇧</span><span class="nav-text">数据中心</span></button>
       <button class="app-tab nav-child" data-tab="history" title="数据看板历史" type="button"><span class="nav-glyph">▤</span><span class="nav-text">历史数据</span></button>
       <button class="app-tab" data-tab="futures" title="期货工具箱" type="button"><span class="nav-glyph">▥</span><span class="nav-text">期货工具箱</span></button>
+      <button class="app-tab" data-tab="stocks" title="股票工作台" type="button"><span class="nav-glyph">▥</span><span class="nav-text">股票工作台</span></button>
     </nav>
     <div class="workspace-nav-label">风险管理</div>
     <nav class="workspace-nav">
@@ -184,6 +185,7 @@ __APPCSS__
   </section>
 
   <section class="panel" id="panelFutures"><div id="futuresRoot" class="ft-workspace"></div></section>
+  <section class="panel" id="panelStocks"><div id="stocksRoot" class="stock-workspace"></div></section>
 
   <!-- 上传 -->
   <section class="panel" id="panelUpload">
@@ -543,5 +545,5 @@ for asset_name in ("fluxdesk-companion.png",):
 print("saved:", dest, "and", dist_dest, len(out), "chars")
 
 # Runtime sources and public bootstrap snapshots are copied for WorkBuddy.
-for name in ("server.py", "futures_service.py", "futures_seed.json"):
+for name in ("server.py", "futures_service.py", "futures_seed.json", "stocks_service.py", "financial_service.py", "financial_catalog.json"):
     shutil.copyfile(os.path.join(BUILD, name), os.path.join(ROOT, "dist", name))

@@ -760,14 +760,14 @@
     var was = curTab;
     curTab = name;
     var panelName = name === 'risk-history' ? 'risk' : name;
-    ['dash', 'market', 'upload', 'history', 'risk', 'admin', 'futures'].forEach(function (t) {
+    ['dash', 'market', 'upload', 'history', 'risk', 'admin', 'futures', 'stocks'].forEach(function (t) {
       var p = $('panel' + t.charAt(0).toUpperCase() + t.slice(1));
       if (p) p.classList.toggle('active', t === panelName);
     });
     document.querySelectorAll('.app-tab').forEach(function (b) {
       b.classList.toggle('active', b.getAttribute('data-tab') === name);
     });
-    var titles = { dash: '总览', market: '数据看板', upload: '数据看板 / 数据中心', history: '数据看板 / 历史数据', risk: '实控人风险日志', 'risk-history': '实控人风险日志 / 历史数据', admin: '运营台', futures: '期货工具箱' };
+    var titles = { dash: '总览', market: '数据看板', upload: '数据看板 / 数据中心', history: '数据看板 / 历史数据', risk: '实控人风险日志', 'risk-history': '实控人风险日志 / 历史数据', admin: '运营台', futures: '期货工具箱', stocks: '股票工作台' };
     if ($('workspaceCrumb')) $('workspaceCrumb').textContent = titles[name] || '工作台';
     if (was && was !== name) window.scrollTo(0, 0);
     if (name === 'dash') {
@@ -787,6 +787,8 @@
     if (name === 'market' && S.mounted) setTimeout(function () { window.dispatchEvent(new Event('resize')); }, 40);
     if (name === 'futures') FuturesDesk.open($('futuresRoot'), S.userId);
     else FuturesDesk.close();
+    if (name === 'stocks') StocksDesk.open($('stocksRoot'), S.userId);
+    else StocksDesk.close();
     if (name === 'history') loadDatasets();
     if (name === 'risk' || name === 'risk-history') loadDatasets().then(function () {
       if (S.riskData) return;

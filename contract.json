@@ -54,9 +54,9 @@
     "send_cooldown_ms": 60000,
     "ls_keys": { "seen": "cu_notif_seen_at", "popped": "cu_notif_popped" },
 
-    "_note_server": "2026-09-18：为期货工具箱增加同进程固定来源抓取/缓存 API；保留 PORT、监听地址、/.cloud 排除与 SPA 兜底。源码由 build/server.py 生成，变更原因与部署步骤见 docs/FUTURES.md。同日第二次变更（修线上 bug）：刷新接口的同源校验不再拿 Origin 比对 Host —— 平台网关不向应用转发可用的 Host，而浏览器对 POST 必定带 Origin，导致所有真实用户的「立即刷新」全部 403；跨站防护只保留 X-FluxDesk-Request（测试已锁定「不暴露任何 CORS 头」这一前提）。详见 docs/DEPLOY.md 与 tests/test_futures.py。",
-    "server_py_sha256": "8a87611adaf292554e69f51be9e88d3f0e4979c217c74a47fa96a85ed424d339",
-    "server_py_bytes": 5770,
+    "_note_server": "2026-09-18：为期货工具箱增加同进程固定来源抓取/缓存 API；保留 PORT、监听地址、/.cloud 排除与 SPA 兜底。源码由 build/server.py 生成，变更原因与部署步骤见 docs/FUTURES.md。同日第二次变更（修线上 bug）：刷新接口的同源校验不再拿 Origin 比对 Host —— 平台网关不向应用转发可用的 Host，而浏览器对 POST 必定带 Origin，导致所有真实用户的「立即刷新」全部 403；跨站防护只保留 X-FluxDesk-Request（测试已锁定「不暴露任何 CORS 头」这一前提）。详见 docs/DEPLOY.md 与 tests/test_futures.py。 2026-09-21：新增 GET /api/stocks 与 POST /api/finance/query，同进程只读代理同花顺公开金融数据；Key 仅保存在服务端环境变量，请求要求 X-FluxDesk-Request 且不开放 CORS。详见 docs/STOCKS.md 与 docs/DEPLOY.md。",
+    "server_py_sha256": "2ebe6713438f287cd538c9a4331fc7e1ee54bca42fe8af8fa281cbf9d3c3e205",
+    "server_py_bytes": 7620,
     "server_must_block": ["/.cloud"],
     "server_must_fallback_to_index": true,
     "futures_workspace": {
