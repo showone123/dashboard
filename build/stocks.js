@@ -1,61 +1,13 @@
-(function () {
+(function(){
   'use strict';
-  var root, user, codes, timer, active = false;
-  var defaults = ['600519.SH', '000001.SZ', '300750.SZ'];
-  function storeKey() { return 'fluxdesk_stocks_v1:' + user; }
-  function save() { localStorage.setItem(storeKey(), JSON.stringify(codes)); }
-  function load() {
-    try { var value = JSON.parse(localStorage.getItem(storeKey()));
-      return Array.isArray(value) ? value.filter(function (c) { return /^[0-9]{6}\.(SH|SZ|BJ)$/.test(c); }).slice(0, 10) : defaults.slice();
-    } catch (e) { return defaults.slice(); }
+  var root,user,codes,selected,quotes=[],timer,active=false,defaults=['600519.SH','000001.SZ','300750.SZ'];
+  function storeKey(){return'fluxdesk_stocks_v1:'+user;}function save(){localStorage.setItem(storeKey(),JSON.stringify(codes));}function valid(code){return/^[0-9]{6}\.(SH|SZ|BJ)$/.test(code);}function load(){try{var value=JSON.parse(localStorage.getItem(storeKey()));return Array.isArray(value)?value.filter(valid).slice(0,10):defaults.slice();}catch(e){return defaults.slice();}}
+  function normalize(value){var code=value.trim().toUpperCase().replace(/\s+/g,'');if(/^[0-9]{6}$/.test(code))code+=/^6/.test(code)?'.SH':/^[48]/.test(code)?'.BJ':'.SZ';return code;}function quote(code){return quotes.find(function(x){return x.thscode===code;})||{thscode:code};}
+  function draw(){var list=root.querySelector('[data-stock-list]');list.replaceChildren();codes.forEach(function(code){var item=quote(code),button=document.createElement('button'),change=Number(item.price_change||0),pct=item.price_change_ratio_pct;button.type='button';button.className='stock-pick'+(code===selected?' active':'');button.innerHTML='<span><b>'+StockRender.text(item.name||code)+'</b><small>'+code+(item.last_price==null?' · 待行情':' · '+StockRender.number(item.last_price))+'</small></span><strong class="'+(change>0?'stock-up':change<0?'stock-down':'')+'">'+(pct==null?'—':(change>0?'+':'')+StockRender.number(pct)+'%')+'</strong>';button.onclick=function(){selected=code;draw();FinanceDashboard.load(code);};list.appendChild(button);});root.querySelector('[data-stock-empty]').hidden=codes.length>0;}
+  async function refresh(){if(!active)return;draw();if(!codes.length){root.querySelector('[data-stock-status]').textContent='添加一只股票开始查看。';return;}try{var response=await fetch('/api/stocks?codes='+encodeURIComponent(codes.join(',')),{cache:'no-store',headers:{'X-FluxDesk-Request':'1'}});if(!response.ok)throw new Error('HTTP '+response.status);var data=await response.json();if(!active)return;quotes=data.items||[];draw();var stamp=quotes[0]&&quotes[0].timestamp;root.querySelector('[data-stock-status]').textContent='行情更新：'+(stamp?new Date(stamp).toLocaleString('zh-CN',{hour12:false}):'暂无时间')+' · 每 30 秒检查';}catch(error){if(active)root.querySelector('[data-stock-status]').textContent='行情暂不可用，资料看板仍可单独查询。';}}
+  function open(node,userId){close();root=node;user=userId;active=true;codes=load();selected=codes[0]||'';root.innerHTML='<div class="stock-heading"><div><small>STOCK WORKSPACE</small><h1>股票工作台</h1><p>一处完成自选观察、价格趋势、估值与财务资料阅读。</p></div><button class="btn" type="button" data-stock-refresh>刷新行情</button></div><div class="stock-command"><form><label for="stock-code">添加股票</label><div><input id="stock-code" inputmode="text" placeholder="输入 600519 或 600519.SH" autocomplete="off"><button class="btn primary" type="submit">加入自选</button></div><small>输入 6 位代码即可自动判断交易所，最多 10 只。</small></form><div class="stock-command-actions"><button class="btn" data-stock-export type="button">导出自选 CSV</button><span data-stock-status aria-live="polite">正在加载…</span></div></div><div class="stock-layout"><aside class="stock-watch"><header><span>MY WATCHLIST</span><h2>自选观察</h2></header><div data-stock-list></div><p class="stock-empty" data-stock-empty hidden>还没有自选股。</p><button class="stock-remove" data-stock-remove type="button">移除当前股票</button></aside><main class="finance-explorer" data-finance-root></main></div><p class="stock-note">数据来源：同花顺金融数据服务。行情快照可能延迟，仅供资料整理与观察。</p>';
+    root.querySelector('form').onsubmit=function(event){event.preventDefault();var input=root.querySelector('#stock-code'),code=normalize(input.value);if(!valid(code)){root.querySelector('[data-stock-status]').textContent='请输入 6 位 A 股代码，例如 600519。';return;}if(codes.indexOf(code)<0&&codes.length>=10){root.querySelector('[data-stock-status]').textContent='自选股最多保留 10 只。';return;}if(codes.indexOf(code)<0)codes.push(code);selected=code;save();input.value='';draw();FinanceDashboard.load(code);refresh();};root.querySelector('[data-stock-refresh]').onclick=refresh;root.querySelector('[data-stock-remove]').onclick=function(){if(!selected)return;codes=codes.filter(function(code){return code!==selected;});selected=codes[0]||'';save();draw();if(selected)FinanceDashboard.load(selected);};root.querySelector('[data-stock-export]').onclick=function(){StockRender.csv('FluxDesk_自选行情',codes.map(quote));};FinanceDashboard.open(root.querySelector('[data-finance-root]'));draw();if(selected)FinanceDashboard.load(selected);refresh();timer=setInterval(refresh,30000);
   }
-  function cell(row, value) { var td = document.createElement('td'); td.textContent = value == null ? '—' : String(value); row.appendChild(td); return td; }
-  function number(v, digits) { return typeof v === 'number' ? v.toLocaleString('zh-CN', {maximumFractionDigits: digits}) : '—'; }
-  function draw(items) {
-    var body = root.querySelector('tbody'); body.replaceChildren();
-    codes.forEach(function (code) {
-      var item = items.find(function (x) { return x.thscode === code; }) || {};
-      var row = document.createElement('tr');
-      cell(row, code); cell(row, item.name || '—'); cell(row, number(item.last_price, 2));
-      var change = cell(row, number(item.price_change, 2));
-      var pct = cell(row, item.price_change_ratio_pct == null ? '—' : number(item.price_change_ratio_pct, 2) + '%');
-      [change, pct].forEach(function (el) { el.className = item.price_change > 0 ? 'stock-up' : item.price_change < 0 ? 'stock-down' : ''; });
-      cell(row, number(item.volume, 0)); cell(row, number(item.turnover, 0));
-      var action = document.createElement('td'), button = document.createElement('button');
-      button.type = 'button'; button.className = 'btn'; button.textContent = '移除';
-      button.onclick = function () { codes = codes.filter(function (c) { return c !== code; }); save(); refresh(); };
-      action.appendChild(button); row.appendChild(action); body.appendChild(row);
-    });
-  }
-  async function refresh() {
-    if (!active) return;
-    if (!codes.length) { draw([]); root.querySelector('[data-stock-status]').textContent = '请输入完整股票代码添加自选股。'; return; }
-    try {
-      var response = await fetch('/api/stocks?codes=' + encodeURIComponent(codes.join(',')), {cache:'no-store', headers:{'X-FluxDesk-Request':'1'}});
-      if (!response.ok) throw new Error('HTTP ' + response.status);
-      var data = await response.json();
-      if (!active) return;
-      draw(data.items || []);
-      var stamp = data.items && data.items[0] && data.items[0].timestamp;
-      root.querySelector('[data-stock-status]').textContent = '行情时间：' + (stamp ? new Date(stamp).toLocaleString('zh-CN', {hour12:false}) : '暂无数据') + ' · 每30秒检查更新';
-    } catch (e) { if (active) root.querySelector('[data-stock-status]').textContent = '行情暂不可用，保留上次显示的数据。'; }
-  }
-  function open(node, userId) {
-    close(); root = node; user = userId; active = true; codes = load();
-    root.innerHTML = '<div class="stock-heading"><div><small>STOCK WORKSPACE</small><h1>股票工作台</h1><p>A 股自选行情快照</p></div><button class="btn primary" type="button" data-stock-refresh>刷新</button></div>' +
-      '<form class="stock-form"><label for="stock-code">完整代码</label><input id="stock-code" placeholder="例如 600519.SH" maxlength="9" autocomplete="off"><button class="btn" type="submit">加入自选</button></form>' +
-      '<p class="stock-status" data-stock-status aria-live="polite">正在加载…</p><div class="stock-table-wrap"><table class="tbl"><thead><tr><th>代码</th><th>名称</th><th>最新价</th><th>涨跌</th><th>涨跌幅</th><th>成交量</th><th>成交额</th><th>操作</th></tr></thead><tbody></tbody></table></div>' +
-      '<p class="stock-note">数据来源：同花顺金融数据服务。行情快照可能延迟，非逐笔实时数据。</p><section class="finance-explorer" data-finance-root></section>';
-    root.querySelector('form').onsubmit = function (event) {
-      event.preventDefault(); var input = root.querySelector('input'), code = input.value.trim().toUpperCase();
-      if (!/^[0-9]{6}\.(SH|SZ|BJ)$/.test(code)) { root.querySelector('[data-stock-status]').textContent = '请输入完整代码，例如 600519.SH。'; return; }
-      if (codes.indexOf(code) < 0 && codes.length >= 10) { root.querySelector('[data-stock-status]').textContent = '最多添加 10 只股票。'; return; }
-      if (codes.indexOf(code) < 0) { codes.push(code); save(); } input.value = ''; refresh();
-    };
-    root.querySelector('[data-stock-refresh]').onclick = refresh;
-    FinanceExplorer.open(root.querySelector('[data-finance-root]'));
-    refresh(); timer = setInterval(refresh, 30000);
-  }
-  function close() { active = false; if (timer) clearInterval(timer); timer = null; }
-  window.StocksDesk = {open: open, close: close, codes: function () { return codes || []; }};
+  function close(){active=false;if(timer)clearInterval(timer);timer=null;if(window.FinanceDashboard)FinanceDashboard.close();}
+  window.StocksDesk={open:open,close:close,codes:function(){return codes||[];}};
 }());

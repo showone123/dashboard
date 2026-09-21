@@ -17,7 +17,7 @@ render = rd("render.js")
 parser = rd("parser.js")
 risk_parser = rd("risk_parser.js")
 exporter = rd("exporter.js")
-appjs = rd("futures.js") + "\n" + rd("financial.js") + "\n" + rd("stocks.js") + "\n" + rd("app.js")
+appjs = rd("futures.js") + "\n" + rd("stock_render.js") + "\n" + rd("financial.js") + "\n" + rd("stocks.js") + "\n" + rd("app.js")
 seed_raw = rd("copper_data.json")
 # 内嵌 JSON 里不能出现 </script>
 seed_raw = seed_raw.replace("<", "\\u003c")

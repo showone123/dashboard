@@ -1,93 +1,17 @@
-(function () {
+(function(){
   'use strict';
-  var root, catalog = [], current, lastResult;
-  var domains = [['a-share','A 股'], ['index','指数与板块'], ['meta','标的检索'], ['fund','基金'], ['futures','期货'], ['options','期权']];
-  function el(tag, text) { var node = document.createElement(tag); if (text != null) node.textContent = text; return node; }
-  function field(parent, tag, text) { var node = el(tag, text); parent.appendChild(node); return node; }
-  function show(message) { root.querySelector('[data-finance-status]').textContent = message; }
-  function selected() { return catalog.find(function (x) { return x.id === root.querySelector('[data-finance-endpoint]').value; }); }
-  function renderParams() {
-    current = selected(); var form = root.querySelector('[data-finance-form]'); form.replaceChildren();
-    lastResult = null; root.querySelector('[data-finance-download]').disabled = true;
-    if (!current) return;
-    current.params.forEach(function (p) {
-      var label = field(form, 'label'); label.className = 'finance-field';
-      field(label, 'span', p.name + (p.required ? ' *' : ''));
-      var input = field(label, 'input'); input.name = p.name; input.placeholder = p.description || p.name;
-      input.required = p.required; input.maxLength = 2000;
-      if (p.name === 'thscodes' && window.StocksDesk.codes) input.value = window.StocksDesk.codes().join(',');
-      field(label, 'small', p.description);
-    });
-    root.querySelector('[data-finance-docs]').href = current.docs;
-    show('填写参数后查询。* 为必填项；日期和枚举格式见接口文档。');
-    root.querySelector('[data-finance-result]').replaceChildren();
+  var root,currentCode='',datasets={},run=0;
+  var abilityNames={growth:'成长能力',profitability:'盈利能力',solvency:'偿债能力',operation:'营运能力','cash-flow':'现金流'},indicatorNames={calculate_operating_income_yoy_growth_ratio:'营业收入同比增长率',calculate_operating_profit_yoy_growth_ratio:'营业利润同比增长率',total_assets_growth_ratio:'总资产增长率',fixed_asset_invest_expansion_ratio:'固定资产投资扩张率',calculate_parent_holder_net_profit_yoy_growth_ratio:'归母净利润同比增长率',total_assets_net_ratio:'总资产收益率',index_deduct_weighted_avg_roe:'扣非加权净资产收益率',sale_gross_margin:'销售毛利率',sale_net_interest_ratio:'销售净利率',index_weighted_avg_roe:'加权净资产收益率',current_ratio:'流动比率',cash_ratio:'现金比率',quick_ratio:'速动比率',earned_interest_multiple:'已获利息倍数',assets_debt_ratio:'资产负债率',total_assets_turnover_ratio:'总资产周转率',inventory_turnover_ratio:'存货周转率',long_term_debt_equity_ratio:'长期负债权益比率',current_assets_turnover_ratio:'流动资产周转率',receive_account_turnover_ratio:'应收账款周转率',net_profit_cash_content:'净利润现金含量',cash_operating_index:'现金营运指数',operating_cash_flow_net_divide_income:'销售现金比率',cash_meet_invest_ratio:'现金满足投资比率'},percentIds={calculate_operating_income_yoy_growth_ratio:1,calculate_operating_profit_yoy_growth_ratio:1,total_assets_growth_ratio:1,fixed_asset_invest_expansion_ratio:1,calculate_parent_holder_net_profit_yoy_growth_ratio:1,total_assets_net_ratio:1,index_deduct_weighted_avg_roe:1,sale_gross_margin:1,sale_net_interest_ratio:1,index_weighted_avg_roe:1,cash_ratio:1,assets_debt_ratio:1,net_profit_cash_content:1,operating_cash_flow_net_divide_income:1};
+  function query(id,params){return fetch('/api/finance/query',{method:'POST',headers:{'Content-Type':'application/json','X-FluxDesk-Request':'1'},body:JSON.stringify({id:id,params:params})}).then(function(response){if(!response.ok)throw new Error('HTTP '+response.status);return response.json();}).then(function(result){if(result.code!==0)throw new Error(result.message||'数据服务返回错误');if(id==='a-share-financials-indicators'){var output=[];(result.data&&result.data.abilities||[]).forEach(function(group){(group.indicators||[]).forEach(function(item){var name=indicatorNames[item.index_id]||item.index_id,percent=percentIds[item.index_id];output.push({ability:abilityNames[group.ability]||group.ability,indicator_name:name,value:item.value==null?'—':Number(item.value).toLocaleString('zh-CN',{maximumFractionDigits:2})+(percent?'%':'')});});});return output;}return StockRender.rows(result);});}
+  function state(section,message,error){var node=root&&root.querySelector('[data-finance-'+section+'-state]');if(!node)return;node.textContent=message;node.classList.toggle('error',!!error);}
+  function setExport(enabled){root.querySelectorAll('[data-export]').forEach(function(button){button.disabled=!enabled;});}
+  function reportPeriod(){return(new Date().getFullYear()-1)+'-4';}
+  function load(code){currentCode=code;datasets={};setExport(false);var token=++run;root.querySelector('[data-finance-code]').textContent=code;['trend','valuation','financial','anomaly'].forEach(function(x){state(x,'正在读取…');});var end=Date.now(),start=end-365*86400000,tasks=[['trend','a-share-prices-historical',{thscode:code,interval:'1d',start:String(start),end:String(end),adjust:'forward'}],['valuation','a-share-valuations-snapshot',{thscodes:code}],['financial','a-share-financials-indicators',{thscode:code,report:reportPeriod()}],['anomaly','a-share-special-data-anomaly-analysis-stock',{thscodes:code}]];
+    Promise.all(tasks.map(function(task){return query(task[1],task[2]).then(function(rows){if(token!==run)return;datasets[task[0]]=rows;state(task[0],rows.length?'':'暂无数据');if(task[0]==='trend')StockRender.chart(root.querySelector('[data-finance-trend]'),rows);if(task[0]==='valuation')StockRender.cards(root.querySelector('[data-finance-valuation]'),rows);if(task[0]==='financial')StockRender.table(root.querySelector('[data-finance-financial]'),rows,'暂无财务指标');if(task[0]==='anomaly')StockRender.notes(root.querySelector('[data-finance-anomaly]'),rows,'近期暂无异动记录');}).catch(function(error){if(token===run)state(task[0],'暂未取得数据：'+error.message,true);});})).then(function(){if(token===run)setExport(Object.keys(datasets).length>0);});
   }
-  function renderEndpoints() {
-    var domain = root.querySelector('[data-finance-domain]').value;
-    var select = root.querySelector('[data-finance-endpoint]'); select.replaceChildren();
-    catalog.filter(function (x) { return x.domain === domain; }).forEach(function (x) {
-      var option = field(select, 'option', x.group + ' · ' + x.title); option.value = x.id;
-    });
-    renderParams();
+  function open(node){root=node;root.innerHTML='<div class="finance-heading"><div><small>READABLE STOCK BRIEF</small><h2><span data-finance-code>—</span> 资料看板</h2><p>自动组合近一年走势、估值、上一年度财务指标和近期异动。</p></div><div class="finance-actions"><button class="btn" type="button" data-export="csv" disabled>导出走势 CSV</button><button class="btn primary" type="button" data-export="txt" disabled>导出完整简报 TXT</button></div></div><div class="finance-board"><section class="finance-panel finance-trend"><header><div><span>PRICE TREND</span><h3>近一年价格走势</h3></div><i data-finance-trend-state></i></header><div data-finance-trend></div></section><section class="finance-panel"><header><div><span>VALUATION</span><h3>估值快照</h3></div><i data-finance-valuation-state></i></header><div class="finance-metrics" data-finance-valuation></div></section><section class="finance-panel"><header><div><span>FINANCIALS</span><h3>财务指标 · '+reportPeriod()+'</h3></div><i data-finance-financial-state></i></header><div class="finance-metrics" data-finance-financial></div></section><section class="finance-panel finance-wide"><header><div><span>EVENTS</span><h3>近期异动</h3></div><i data-finance-anomaly-state></i></header><div data-finance-anomaly></div></section></div>';
+    root.querySelector('[data-export="csv"]').onclick=function(){StockRender.csv(currentCode+'_近一年行情',datasets.trend||[]);};root.querySelector('[data-export="txt"]').onclick=function(){StockRender.txt(currentCode+'_股票资料简报',[{title:'估值快照',rows:datasets.valuation||[]},{title:'财务指标',rows:datasets.financial||[]},{title:'近期异动',rows:datasets.anomaly||[]},{title:'近一年行情',rows:datasets.trend||[]}]);};
   }
-  function renderResult(result) {
-    var box = root.querySelector('[data-finance-result]'); box.replaceChildren();
-    var data = result.data, items = data && Array.isArray(data.item) ? data.item : null;
-    if (items && items.length && items.every(function (x) { return x && typeof x === 'object' && !Array.isArray(x); })) {
-      var columns = Object.keys(items[0]).slice(0, 16), wrap = field(box, 'div'), table = field(wrap, 'table');
-      wrap.className = 'finance-table-wrap'; table.className = 'tbl';
-      var head = field(table, 'thead'), hr = field(head, 'tr');
-      columns.forEach(function (key) { field(hr, 'th', key); });
-      var body = field(table, 'tbody');
-      items.slice(0, 100).forEach(function (item) { var row = field(body, 'tr'); columns.forEach(function (key) {
-        var value = item[key]; field(row, 'td', value == null ? '—' : typeof value === 'object' ? JSON.stringify(value) : String(value));
-      }); });
-      field(box, 'p', '显示前 ' + Math.min(items.length, 100) + ' / ' + items.length + ' 条；下载 JSON 获取完整结构。');
-    } else {
-      var pre = field(box, 'pre', JSON.stringify(data, null, 2).slice(0, 80000)); pre.className = 'finance-json';
-      if (JSON.stringify(data).length > 80000) field(box, 'p', '预览已截断；下载 JSON 获取完整结构。');
-    }
-  }
-  async function submit(event) {
-    event.preventDefault(); if (!current) return;
-    lastResult = null; root.querySelector('[data-finance-download]').disabled = true;
-    var params = {}; new FormData(root.querySelector('[data-finance-submit]')).forEach(function (value, key) {
-      if (String(value).trim()) params[key] = String(value).trim();
-    });
-    show('正在查询…'); root.querySelector('[data-finance-run]').disabled = true;
-    try {
-      var response = await fetch('/api/finance/query', {method:'POST', headers:{'Content-Type':'application/json','X-FluxDesk-Request':'1'}, body:JSON.stringify({id:current.id,params:params})});
-      if (!response.ok) throw new Error('HTTP ' + response.status);
-      var result = await response.json(); lastResult = result;
-      if (result.code !== 0) { show('接口返回 ' + result.code + '：' + result.message + (result.request_id ? ' · 请求 ' + result.request_id : '')); return; }
-      renderResult(result);
-      show('查询成功 · ' + current.title + (result.data && result.data.timestamp ? ' · 数据时间 ' + new Date(result.data.timestamp).toLocaleString('zh-CN', {hour12:false}) : ''));
-      root.querySelector('[data-finance-download]').disabled = false;
-    } catch (error) { show('查询失败：' + error.message + '。请检查参数、配额或服务端配置。'); }
-    finally { root.querySelector('[data-finance-run]').disabled = false; }
-  }
-  async function open(node) {
-    root = node;
-    root.innerHTML = '<div class="finance-heading"><div><small>HITHINK FINANCE DATA</small><h2>金融数据查询</h2><p>按官方公开接口选择业务与参数，结果保留原始字段。</p></div></div>' +
-      '<div class="finance-toolbar"><label>业务域 <select data-finance-domain></select></label><label>接口 <select data-finance-endpoint></select></label><a data-finance-docs target="_blank" rel="noopener noreferrer">接口文档 ↗</a></div>' +
-      '<form data-finance-submit><div class="finance-fields" data-finance-form></div><div class="finance-actions"><button class="btn primary" data-finance-run type="submit">查询数据</button><button class="btn" data-finance-download type="button" disabled>下载 JSON</button></div></form>' +
-      '<p class="finance-status" data-finance-status aria-live="polite">正在加载接口目录…</p><div data-finance-result></div>';
-    root.querySelector('[data-finance-submit]').onsubmit = submit;
-    root.querySelector('[data-finance-domain]').onchange = renderEndpoints;
-    root.querySelector('[data-finance-endpoint]').onchange = renderParams;
-    root.querySelector('[data-finance-download]').onclick = function () {
-      if (!lastResult) return;
-      var url = URL.createObjectURL(new Blob([JSON.stringify(lastResult, null, 2)], {type:'application/json'}));
-      var link = el('a'); link.href = url; link.download = current.id + '.json'; link.click(); setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
-    };
-    try {
-      var response = await fetch('/financial_catalog.json', {cache:'force-cache'});
-      if (!response.ok) throw new Error('HTTP ' + response.status);
-      catalog = await response.json();
-      var select = root.querySelector('[data-finance-domain]');
-      domains.forEach(function (d) { var option = field(select, 'option', d[1]); option.value = d[0]; });
-      renderEndpoints();
-    } catch (error) { show('接口目录加载失败：' + error.message); }
-  }
-  window.FinanceExplorer = {open: open};
+  function close(){run+=1;root=null;}
+  window.FinanceDashboard={open:open,load:load,close:close};
 }());
