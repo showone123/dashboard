@@ -178,7 +178,19 @@ __APPCSS__
 
   <!-- 完整市场看板 -->
   <section class="panel" id="panelMarket">
+    <div class="market-template-bar">
+      <div class="market-template-tabs" role="tablist" aria-label="看板模板">
+        <button class="market-template-tab active" data-market-template="copper" type="button">铜期货看板</button>
+        <button class="market-template-tab" data-market-template="soymeal" type="button">豆粕基本面</button>
+      </div>
+      <div class="market-template-actions hidden" id="soymealActions">
+        <button class="btn sm" id="btnSoymealUpload" type="button">上传豆粕 HTML</button>
+        <a class="btn sm" href="/assets/soymeal-dashboard.html" download="豆粕基本面及行情分析模板.html">下载豆粕 HTML</a>
+        <input class="hidden" id="soymealFileInput" type="file" accept=".html,text/html"/>
+      </div>
+    </div>
     <div id="cuRoot"></div>
+    <iframe class="soymeal-frame hidden" id="soymealFrame" src="/assets/soymeal-dashboard.html" sandbox="allow-scripts" title="豆粕基本面及行情分析"></iframe>
     <button class="export-fab" id="btnExport" type="button" title="把当前看板导出为文件">
       <span class="ef-ic">⤓</span><span>导出成果</span>
     </button>
@@ -540,8 +552,11 @@ with open(dist_dest, "w", encoding="utf-8") as f:
 assets_src = os.path.join(ROOT, "assets")
 assets_dest = os.path.join(ROOT, "dist", "assets")
 os.makedirs(assets_dest, exist_ok=True)
-for asset_name in ("fluxdesk-companion.png",):
-    shutil.copy2(os.path.join(assets_src, asset_name), os.path.join(assets_dest, asset_name))
+for asset_name in ("fluxdesk-companion.png", "soymeal-dashboard.html"):
+    asset_target = os.path.join(assets_dest, asset_name)
+    if os.path.exists(asset_target):
+        os.chmod(asset_target, 0o666)
+    shutil.copyfile(os.path.join(assets_src, asset_name), asset_target)
 print("saved:", dest, "and", dist_dest, len(out), "chars")
 
 # Runtime sources and public bootstrap snapshots are copied for WorkBuddy.

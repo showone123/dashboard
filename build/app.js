@@ -683,11 +683,36 @@
     if (S.isOperator) loadOperator();
   }
 
+  var soymealObjectUrl = '';
+  function selectMarketTemplate(name) {
+    var soymeal = name === 'soymeal';
+    document.querySelectorAll('[data-market-template]').forEach(function (button) {
+      button.classList.toggle('active', button.getAttribute('data-market-template') === name);
+    });
+    $('cuRoot').classList.toggle('hidden', soymeal);
+    $('soymealFrame').classList.toggle('hidden', !soymeal);
+    $('soymealActions').classList.toggle('hidden', !soymeal);
+    $('btnExport').classList.toggle('hidden', soymeal);
+    $('dataSource').textContent = soymeal ? '豆粕基本面 · 2026-09-15' : S.dataSource;
+  }
+
+  function loadSoymealHtml(file) {
+    if (!file || !/\.html?$/i.test(file.name) || file.size > 5 * 1024 * 1024) {
+      toast('err', '请选择 5 MB 以内的 HTML 文件'); return;
+    }
+    if (soymealObjectUrl) URL.revokeObjectURL(soymealObjectUrl);
+    soymealObjectUrl = URL.createObjectURL(file);
+    $('soymealFrame').src = soymealObjectUrl;
+    selectMarketTemplate('soymeal');
+    toast('ok', '豆粕 HTML 已载入，本次仅在当前浏览器预览');
+  }
+
   function setData(d, label) {
     S.data = d; S.dataSource = label || '自定义数据';
     $('dataSource').textContent = S.dataSource;
     CuRender.mount($('cuRoot'), d);
     S.mounted = true;
+    selectMarketTemplate('copper');
     renderOverview();
   }
 
@@ -1811,6 +1836,13 @@
     });
     document.querySelectorAll('.app-tab').forEach(function (b) {
       b.addEventListener('click', function () { switchTab(b.getAttribute('data-tab')); });
+    });
+    document.querySelectorAll('[data-market-template]').forEach(function (button) {
+      button.addEventListener('click', function () { selectMarketTemplate(button.getAttribute('data-market-template')); });
+    });
+    $('btnSoymealUpload').addEventListener('click', function () { $('soymealFileInput').click(); });
+    $('soymealFileInput').addEventListener('change', function (event) {
+      loadSoymealHtml(event.target.files && event.target.files[0]); event.target.value = '';
     });
     // 顶部「登录/注册」分段控件：直接切状态并重绘表单。
     // 以前是去"点"表单内的 [data-go="signup"] 链接，而登录面板里没有这个链接，
