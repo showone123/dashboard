@@ -33,6 +33,7 @@ CREATE TABLE public.access_grants (
     email       text,
     created_at  timestamptz NOT NULL DEFAULT now(),
     updated_at  timestamptz NOT NULL DEFAULT now(),
+    last_seen_at timestamptz,                             -- 最后活跃心跳（迁移 002）；NULL = 从未上报
     CONSTRAINT access_grants_pkey      PRIMARY KEY (id),
     CONSTRAINT access_grants_owner_key UNIQUE (owner_id)
 );
@@ -81,7 +82,19 @@ CREATE TABLE public.operators (
 --  2. 表级授权（第 1 道门）
 --     anon 一律零权限：未登录用户连表都摸不到，返回 401 / DATABASE_42501。
 -- =============================================================================
-GRANT SELECT, INSERT, UPDATE         ON public.access_grants  TO authenticated;   -- 无 DELETE（授权记录只能由运营方处置）
+GRANT SELECT, INSERT                  ON public.access_grants  TO authenticated;   -- 无 DELETE（授权记录只能由运营方处置）
+-- ⚠️ access_grants 的 UPDATE **不在表级授予**，改为列级（迁移 002）。
+--    原因：加了 grants_update_own_heartbeat 后，表级 UPDATE 会让客户能改自己的
+--    status / expires_at / plan ⇒ 自助提权。列级授权是硬门槛：
+--    PostgreSQL 要求 UPDATE 语句涉及的每一列都有权限，缺一列即 42501。
+--    ⚠️ 但也**不能只授 last_seen_at**：运营台的「开通 / 暂停」按钮走的是同一个
+--    authenticated 角色（前端只是普通 update(patch)，没有 service_role 通道），
+--    只授一列会先把自己的运营台打挂。所以运营改状态用的列必须一并授出。
+--    行级隔离靠策略（见 4.1 的 grants_update_own_heartbeat / grants_operator_update），
+--    列级隔离靠这两条 GRANT —— 两层各管一件事，都不能省。
+GRANT UPDATE (last_seen_at)           ON public.access_grants  TO authenticated;   -- 心跳（本人写自己那行）
+GRANT UPDATE (status, plan, expires_at, updated_at, note)
+                                      ON public.access_grants  TO authenticated;   -- 运营台改状态；⚠️ 绝不含 owner_id / id / created_at
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.datasets       TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.notifications   TO authenticated;   -- 实际写入受 RLS 限制为运营方
 GRANT SELECT                          ON public.operators      TO authenticated;   -- 只读，用于判断自己是不是运营方
@@ -132,6 +145,16 @@ CREATE POLICY grants_insert_self_pending ON public.access_grants
 CREATE POLICY grants_operator_read ON public.access_grants
     FOR SELECT TO authenticated
     USING (EXISTS (SELECT 1 FROM public.operators o WHERE o.owner_id = auth.uid()));
+
+-- 本人上报活跃心跳（迁移 002）：只动自己那一行。
+-- ⚠️ 这条策略只解决"行"的边界，"列"的边界由上面的列级 GRANT 兜住 —— 两者缺一不可：
+--    只给策略不收紧列 ⇒ 客户能改自己的 status/expires_at 提权；
+--    只给列不建策略 ⇒ 行级 UPDATE 无策略 = 改不动任何行（42501 的另一个来源）。
+--    USING 与 WITH CHECK 都限 owner_id：少写 WITH CHECK 就能把行"改嫁"给别人。
+CREATE POLICY grants_update_own_heartbeat ON public.access_grants
+    FOR UPDATE TO authenticated
+    USING      (owner_id = auth.uid())
+    WITH CHECK (owner_id = auth.uid());
 
 -- 运营方改全部（审批通过/续期/禁用都走这条）
 CREATE POLICY grants_operator_update ON public.access_grants

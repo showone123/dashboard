@@ -1,0 +1,546 @@
+/* ==========================================================================
+   GitHub 项目收藏（Project Library）
+   ---------------------------------------------------------------------------
+   把从 GitHub 上收集到的优质项目建档、分类、筛选、导出。
+   Excel 读写复用页面已引入的 SheetJS（XLSX），不新增依赖。
+
+   对外接口：window.ProjectsDesk.open(node, userId) / .close()
+   数据契约（也是 Excel 模板的表头顺序）见 COLS —— 改这里等于改模板契约。
+   ========================================================================== */
+(function (global) {
+  'use strict';
+
+  /* ---------- 数据契约 ---------- */
+  var COLS = [
+    { k: 'added_at', t: '入库日期' },
+    { k: 'name', t: '项目名称' },
+    { k: 'url', t: '仓库地址' },
+    { k: 'category', t: '项目类别' },
+    { k: 'summary', t: '项目简介' },
+    { k: 'openness', t: '开源程度' },
+    { k: 'stars', t: 'Star 数' },
+    { k: 'note', t: '备注' }
+  ];
+
+  var CATS = ['AI / LLM', '数据分析', '量化交易', '开发者工具', '前端 UI', '后端服务',
+    '数据库', '运维部署', '爬虫采集', '文档知识库', '效率工具', '学习资源', '其他'];
+
+  var OPEN = ['完全开源', '开源核心', '部分开源', '源码可见', '闭源'];
+
+  var TONE = { '完全开源': 'good', '开源核心': 'info', '部分开源': 'warn', '源码可见': 'muted', '闭源': 'bad' };
+
+  /* ---------- 纯函数（可被 node 直接测，不碰 DOM） ---------- */
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function ymd(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function today() { return ymd(new Date()); }
+
+  // Excel 里日期可能是 Date / 序列号 / 各种字符串，统一成 YYYY-MM-DD
+  function toDate(v) {
+    if (v === null || v === undefined || v === '') return '';
+    if (v instanceof Date && !isNaN(v)) return ymd(v);
+    if (typeof v === 'number' && isFinite(v)) {
+      return ymd(new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000));
+    }
+    var s = String(v).trim();
+    var m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+    if (m) return m[1] + '-' + pad(m[2]) + '-' + pad(m[3]);
+    var d = new Date(s);
+    return isNaN(d.getTime()) ? '' : ymd(d);
+  }
+
+  function toStars(v) {
+    if (typeof v === 'number' && isFinite(v)) return Math.max(0, Math.round(v));
+    var s = String(v === null || v === undefined ? '' : v).replace(/[,\s个★⭐]/g, '');
+    // GitHub 页面上是「74.2k」这种写法，直接 Number() 会变成 NaN 静默丢成 0
+    var k = s.match(/^([\d.]+)[kK]$/);
+    if (k) return Math.max(0, Math.round(Number(k[1]) * 1000));
+    var n = Number(s);
+    return isFinite(n) ? Math.max(0, Math.round(n)) : 0;
+  }
+
+  function field(row, keys) {
+    for (var i = 0; i < keys.length; i++) {
+      for (var j = 0; j < Object.keys(row).length; j++) {
+        var k = Object.keys(row)[j];
+        if (String(k).replace(/\s/g, '') === keys[i].replace(/\s/g, '')) {
+          var v = row[k];
+          if (v !== null && v !== undefined && String(v).trim() !== '') return v;
+        }
+      }
+    }
+    return '';
+  }
+
+  // Excel 行 → 数据项。表头容错：带不带空格、用不用别名都能认。
+  function rowFromExcel(row) {
+    return {
+      added_at: toDate(field(row, ['入库日期', '日期', 'added_at'])),
+      name: String(field(row, ['项目名称', '名称', '项目', 'name']) || '').trim(),
+      url: String(field(row, ['仓库地址', '地址', '链接', 'url']) || '').trim(),
+      category: String(field(row, ['项目类别', '类别', '分类', 'category']) || '').trim(),
+      summary: String(field(row, ['项目简介', '简介', '说明', 'summary']) || '').trim(),
+      openness: String(field(row, ['开源程度', '开源', 'openness']) || '').trim(),
+      stars: toStars(field(row, ['Star 数', 'Star数', 'star', 'stars', '星标'])),
+      note: String(field(row, ['备注', 'note']) || '').trim()
+    };
+  }
+
+  function rowToArray(it) {
+    return COLS.map(function (c) { return it[c.k]; });
+  }
+
+  // 筛选：空值 = 不限制
+  function matchItem(it, f) {
+    if (f.cat && it.category !== f.cat) return false;
+    if (f.open && it.openness !== f.open) return false;
+    if (f.from && it.added_at && it.added_at < f.from) return false;
+    if (f.to && it.added_at && it.added_at > f.to) return false;
+    if (f.minStars !== '' && Number(it.stars || 0) < Number(f.minStars)) return false;
+    if (f.q) {
+      var hay = [it.name, it.url, it.summary, it.category, it.openness, it.note].join(' ').toLowerCase();
+      if (hay.indexOf(f.q.toLowerCase()) < 0) return false;
+    }
+    return true;
+  }
+
+  var PURE = { COLS: COLS, toDate: toDate, toStars: toStars, rowFromExcel: rowFromExcel,
+    rowToArray: rowToArray, matchItem: matchItem, today: today };
+
+  if (typeof module === 'object' && module.exports) { module.exports = PURE; return; }
+
+  /* ---------- 运行时状态 ---------- */
+  var root = null, user = '', items = [], active = false;
+  var f = { q: '', cat: '', open: '', from: '', to: '', minStars: '' };
+  var editingId = null;
+
+  function $(sel) { return root.querySelector(sel); }
+  function esc(s) {
+    return String(s === null || s === undefined ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+  function uid() { return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+  function storeKey() { return 'fluxdesk_projects_v1:' + (user || 'anon'); }
+
+  /* ---------- 持久化 ---------- */
+  function load() {
+    try {
+      var v = JSON.parse(localStorage.getItem(storeKey()));
+      items = Array.isArray(v) ? v.map(normalize) : [];
+    } catch (e) { items = []; }
+  }
+  function save() {
+    try { localStorage.setItem(storeKey(), JSON.stringify(items)); } catch (e) { /* 配额满就只留内存态 */ }
+  }
+  function normalize(it) {
+    var o = { id: it && it.id ? String(it.id) : uid() };
+    COLS.forEach(function (c) {
+      o[c.k] = c.k === 'stars' ? toStars(it && it[c.k]) : String((it && it[c.k]) || '').trim();
+    });
+    o.added_at = toDate(o.added_at) || today();
+    return o;
+  }
+
+  /* ---------- 选择 ---------- */
+  function visible() {
+    var out = items.filter(function (it) { return matchItem(it, f); });
+    return out.sort(function (a, b) {
+      if (a.added_at !== b.added_at) return a.added_at < b.added_at ? 1 : -1;
+      return Number(b.stars) - Number(a.stars);
+    });
+  }
+
+  /* ---------- 渲染 ---------- */
+  function num(n) { return Number(n || 0).toLocaleString('zh-CN'); }
+
+  function renderStats() {
+    var days30 = new Date(Date.now() - 30 * 86400000);
+    var recent = items.filter(function (it) {
+      var d = new Date(it.added_at + 'T00:00:00');
+      return !isNaN(d.getTime()) && d >= days30;
+    }).length;
+    var cats = {};
+    items.forEach(function (it) { if (it.category) cats[it.category] = (cats[it.category] || 0) + 1; });
+    var stars = items.reduce(function (a, it) { return a + Number(it.stars || 0); }, 0);
+    var top = Object.keys(cats).sort(function (a, b) { return cats[b] - cats[a]; })[0];
+    var cards = [
+      ['收录项目', num(items.length), '个仓库'],
+      ['项目类别', num(Object.keys(cats).length), top ? '最多：' + top : '尚未分类'],
+      ['Star 合计', num(stars), '入库时快照'],
+      ['近 30 天入库', num(recent), '持续整理中']
+    ];
+    $('[data-pr-stats]').innerHTML = cards.map(function (c) {
+      return '<div class="pr-stat"><span>' + c[0] + '</span><b>' + c[1] + '</b><em>' + esc(c[2]) + '</em></div>';
+    }).join('');
+  }
+
+  function renderBars() {
+    var counts = {}, max = 0;
+    items.forEach(function (it) {
+      var k = it.category || '未分类';
+      counts[k] = (counts[k] || 0) + 1;
+      if (counts[k] > max) max = counts[k];
+    });
+    var ks = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; });
+    if (!ks.length) { $('[data-pr-bars]').innerHTML = ''; return; }
+    $('[data-pr-bars]').innerHTML = ks.map(function (k) {
+      var on = f.cat === k ? ' active' : '';
+      var w = Math.max(3, Math.round(counts[k] / max * 34));
+      return '<button class="pr-bar' + on + '" type="button" data-pr-bar="' + esc(k) + '">'
+        + '<i style="width:' + w + 'px"></i>' + esc(k) + ' <u>' + counts[k] + '</u></button>';
+    }).join('');
+  }
+
+  function renderTable() {
+    var rows = visible();
+    var box = $('[data-pr-body]');
+    $('[data-pr-count]').textContent = rows.length === items.length
+      ? ('共 ' + items.length + ' 个项目')
+      : ('筛选出 ' + rows.length + ' / ' + items.length + ' 个项目');
+
+    if (!rows.length) {
+      box.innerHTML = '<tr><td colspan="' + (COLS.length + 1) + '"><div class="pr-empty">'
+        + (items.length
+          ? '<b>没有符合条件的项目</b>放宽筛选条件，或点右侧「重置」。'
+          : '<b>项目库还是空的</b>先「下载模板」按格式填好，再「导入 Excel」批量入库；也可以直接「新增项目」。')
+        + '</div></td></tr>';
+      return;
+    }
+
+    box.innerHTML = rows.map(function (it) {
+      var tone = TONE[it.openness] || 'muted';
+      var link = it.url
+        ? '<a href="' + esc(it.url) + '" target="_blank" rel="noopener noreferrer">' + esc(it.name || it.url) + '</a>'
+        : esc(it.name || '—');
+      var meta = [it.note, it.url && it.name ? it.url : ''].filter(Boolean).map(esc).join(' · ');
+      return '<tr>'
+        + '<td class="pr-date">' + esc(it.added_at) + '</td>'
+        + '<td class="pr-name">' + link + (meta ? '<small>' + meta + '</small>' : '') + '</td>'
+        + '<td><span class="pr-tag">' + esc(it.category || '未分类') + '</span></td>'
+        + '<td class="pr-summary"><p>' + esc(it.summary || '—') + '</p></td>'
+        + '<td><span class="pr-open ' + tone + '">' + esc(it.openness || '未标注') + '</span></td>'
+        + '<td class="pr-stars">' + num(it.stars) + '</td>'
+        + '<td><button class="pr-rowbtn" type="button" data-pr-edit="' + esc(it.id) + '">编辑</button> '
+        + '<button class="pr-rowbtn danger" type="button" data-pr-del="' + esc(it.id) + '">删除</button></td>'
+        + '</tr>';
+    }).join('');
+  }
+
+  function render() { renderStats(); renderBars(); renderTable(); }
+
+  /* ---------- 编辑 ---------- */
+  function openEditor(id) {
+    editingId = id || null;
+    var it = id ? items.filter(function (x) { return x.id === id; })[0] : null;
+    var dlg = $('[data-pr-dialog]');
+    $('[data-pr-dlg-title]').textContent = it ? '编辑项目' : '新增项目';
+    $('[data-pr-f-name]').value = it ? it.name : '';
+    $('[data-pr-f-url]').value = it ? it.url : '';
+    $('[data-pr-f-date]').value = (it && it.added_at) || today();
+    $('[data-pr-f-stars]').value = it ? it.stars : '';
+    $('[data-pr-f-summary]').value = it ? it.summary : '';
+    $('[data-pr-f-note]').value = it ? it.note : '';
+    $('[data-pr-f-cat]').value = (it && it.category) || CATS[0];
+    $('[data-pr-f-open]').value = (it && it.openness) || OPEN[0];
+    if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+  }
+
+  function submitEditor() {
+    var name = $('[data-pr-f-name]').value.trim();
+    var url = $('[data-pr-f-url]').value.trim();
+    if (!name && !url) { toast('请至少填写项目名称或仓库地址。'); return; }
+    var patch = {
+      added_at: toDate($('[data-pr-f-date]').value) || today(),
+      name: name,
+      url: url,
+      category: $('[data-pr-f-cat]').value.trim() || '其他',
+      summary: $('[data-pr-f-summary]').value.trim(),
+      openness: $('[data-pr-f-open]').value.trim(),
+      stars: toStars($('[data-pr-f-stars]').value),
+      note: $('[data-pr-f-note]').value.trim()
+    };
+    if (editingId) {
+      items = items.map(function (x) {
+        return x.id === editingId ? normalize(Object.assign({}, x, patch, { id: editingId })) : x;
+      });
+    } else {
+      items.push(normalize(Object.assign({ id: uid() }, patch)));
+    }
+    save(); render(); closeEditor();
+    toast(editingId ? '已更新。' : '已入库。');
+  }
+
+  function closeEditor() {
+    editingId = null;
+    var dlg = $('[data-pr-dialog]');
+    if (typeof dlg.close === 'function') dlg.close(); else dlg.removeAttribute('open');
+  }
+
+  function removeItem(id) {
+    var it = items.filter(function (x) { return x.id === id; })[0];
+    if (!it) return;
+    if (!global.confirm('删除「' + (it.name || it.url) + '」？此操作不可撤销。')) return;
+    items = items.filter(function (x) { return x.id !== id; });
+    save(); render(); toast('已删除。');
+  }
+
+  function toast(text) {
+    if (global.FluxToast) { global.FluxToast(text); return; }
+    if (global.toast) { global.toast('info', text); return; }
+    var el = $('[data-pr-toast]');
+    el.textContent = text;
+    el.classList.add('on');
+    clearTimeout(toast.t);
+    toast.t = setTimeout(function () { el.classList.remove('on'); }, 2600);
+  }
+
+  /* ---------- Excel ---------- */
+  function colWidths() {
+    return COLS.map(function (c) { return { wch: c.k === 'summary' ? 52 : (c.k === 'note' ? 26 : 15) }; });
+  }
+
+  function sheetFromRows(rows) {
+    var aoa = [COLS.map(function (c) { return c.t; })].concat(rows.map(rowToArray));
+    var ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = colWidths();
+    return ws;
+  }
+
+  function fileName(ext) {
+    var d = new Date(), z = function (n) { return String(n).padStart(2, '0'); };
+    return 'FluxDesk_项目库_' + d.getFullYear() + z(d.getMonth() + 1) + z(d.getDate()) + '.' + ext;
+  }
+
+  function exportXlsx() {
+    var rows = visible();
+    if (!rows.length) { toast('当前没有可导出的项目。'); return; }
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheetFromRows(rows), '项目库');
+    XLSX.writeFile(wb, fileName('xlsx'));
+    toast('已导出 ' + rows.length + ' 个项目。');
+  }
+
+  function downloadTemplate() {
+    var wb = XLSX.utils.book_new();
+
+    var demo = [
+      { added_at: today(), name: 'openai/whisper', url: 'https://github.com/openai/whisper',
+        category: 'AI / LLM', summary: '通用语音识别模型，多语种、鲁棒性好，适合做会议与录音转写。',
+        openness: '完全开源', stars: 74000, note: '示例行，导入前请删除' },
+      { added_at: today(), name: 'obsidianmd/obsidian-releases', url: 'https://github.com/obsidianmd/obsidian-releases',
+        category: '文档知识库', summary: '本地优先的双链笔记工具，插件生态丰富，适合搭建个人知识库。',
+        openness: '源码可见', stars: 9200, note: '示例行，导入前请删除' }
+    ];
+    var ws = sheetFromRows(demo);
+    ws['!rows'] = [{}, { hpt: 30 }, { hpt: 30 }];
+    XLSX.utils.book_append_sheet(wb, ws, '项目库');
+
+    var help = [
+      ['字段', '是否必填', '填写说明'],
+      ['入库日期', '建议', '格式 YYYY-MM-DD，例如 2026-10-03。留空则按导入当天计。'],
+      ['项目名称', '至少填一项', '建议用「作者/仓库名」，例如 openai/whisper。'],
+      ['仓库地址', '至少填一项', '完整的 GitHub 链接。导入时以此列去重：地址相同则更新原记录。'],
+      ['项目类别', '建议', '参考取值：' + CATS.join('、') + '。也可自行填写新类别。'],
+      ['项目简介', '建议', '一两句话说清「它是干什么的、好在哪」，便于日后检索。'],
+      ['开源程度', '建议', '参考取值：' + OPEN.join('、') + '。'],
+      ['Star 数', '建议', '只填数字，不要带逗号或「k」。记录的是截至入库时的快照。'],
+      ['备注', '选填', '你自己的使用心得、待办、关联项目等。'],
+      ['', '', ''],
+      ['导入规则', '', '按「仓库地址」去重（无地址时按项目名称）。已存在的记录会被覆盖更新，其余追加。'],
+      ['导出规则', '', '导出的是「当前筛选结果」，不是全量。想导全量请先点重置。']
+    ];
+    var wsHelp = XLSX.utils.aoa_to_sheet(help);
+    wsHelp['!cols'] = [{ wch: 14 }, { wch: 14 }, { wch: 78 }];
+    XLSX.utils.book_append_sheet(wb, wsHelp, '填写说明');
+
+    XLSX.writeFile(wb, 'FluxDesk_项目库_模板.xlsx');
+    toast('模板已下载，填好后用「导入 Excel」送回。');
+  }
+
+  function importXlsx(file) {
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      var wb;
+      try { wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true }); }
+      catch (err) { toast('这个文件读不出来，确认是 .xlsx 或 .csv。'); return; }
+      var name = wb.SheetNames.indexOf('项目库') >= 0 ? '项目库' : wb.SheetNames[0];
+      var rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '', raw: true });
+      if (!rows.length) { toast('没有读到数据行（第一行需要是表头）。'); return; }
+
+      var added = 0, updated = 0, skipped = 0;
+      var index = {};
+      items.forEach(function (it) { index[(it.url || it.name).toLowerCase()] = it; });
+
+      rows.forEach(function (raw) {
+        var it = rowFromExcel(raw);
+        var key = (it.url || it.name).toLowerCase();
+        if (!key || key === '示例行') { skipped++; return; }
+        if (!it.added_at) it.added_at = today();
+        var hit = index[key];
+        if (hit) { Object.assign(hit, it, { id: hit.id }); updated++; }
+        else { var fresh = normalize(it); items.push(fresh); index[key] = fresh; added++; }
+      });
+
+      save(); render(); resetFilterInputs();
+      var msg = '导入完成：新增 ' + added + ' 条';
+      if (updated) msg += '，更新 ' + updated + ' 条';
+      if (skipped) msg += '，跳过 ' + skipped + ' 行空行/标题行';
+      toast(msg + '。');
+    };
+    reader.onerror = function () { toast('文件读取失败，重试一次。'); };
+    reader.readAsArrayBuffer(file);
+  }
+
+  /* ---------- 筛选控件 ---------- */
+  function readFilters() {
+    f.q = $('[data-pr-q]').value.trim();
+    f.cat = $('[data-pr-cat]').value;
+    f.open = $('[data-pr-open]').value;
+    f.from = $('[data-pr-from]').value;
+    f.to = $('[data-pr-to]').value;
+    f.minStars = $('[data-pr-min]').value;
+  }
+
+  function resetFilterInputs() {
+    $('[data-pr-q]').value = '';
+    $('[data-pr-cat]').value = '';
+    $('[data-pr-open]').value = '';
+    $('[data-pr-from]').value = '';
+    $('[data-pr-to]').value = '';
+    $('[data-pr-min]').value = '';
+    f = { q: '', cat: '', open: '', from: '', to: '', minStars: '' };
+  }
+
+  function options(list, all) {
+    return '<option value="">' + all + '</option>' + list.map(function (x) {
+      return '<option value="' + esc(x) + '">' + esc(x) + '</option>';
+    }).join('');
+  }
+
+  /* ---------- 骨架 ---------- */
+  function skeleton() {
+    return ''
+      + '<div class="pr-heading">'
+      + '<div><small>GITHUB PROJECT LIBRARY</small><h1>GitHub 项目收藏</h1>'
+      + '<p>把收集到的开源项目建档、归类、筛选，随时导出成 Excel 归档或带走。</p></div>'
+      + '<div class="pr-actions">'
+      + '<button class="btn primary" type="button" data-pr-new>新增项目</button>'
+      + '<button class="btn" type="button" data-pr-tpl>下载模板</button>'
+      + '<button class="btn" type="button" data-pr-import>导入 Excel</button>'
+      + '<button class="btn" type="button" data-pr-export>导出 Excel</button>'
+      + '</div></div>'
+      + '<section class="pr-stats" data-pr-stats></section>'
+      + '<div class="pr-panel">'
+      + '<div class="pr-bars" data-pr-bars></div>'
+      + '<div class="pr-filters">'
+      + '<div><label for="prQ">关键词</label><input id="prQ" type="search" data-pr-q placeholder="名称 / 简介 / 地址"></div>'
+      + '<div><label for="prCat">项目类别</label><select id="prCat" data-pr-cat>' + options(CATS, '全部类别') + '</select></div>'
+      + '<div><label for="prOpen">开源程度</label><select id="prOpen" data-pr-open>' + options(OPEN, '全部程度') + '</select></div>'
+      + '<div><label for="prFrom">入库日期 从</label><input id="prFrom" type="date" data-pr-from></div>'
+      + '<div><label for="prTo">到</label><input id="prTo" type="date" data-pr-to></div>'
+      + '<div><label for="prMin">Star 数 ≥</label><input id="prMin" type="number" min="0" step="100" data-pr-min placeholder="0"></div>'
+      + '<button class="pr-reset" type="button" data-pr-reset>重置</button>'
+      + '</div>'
+      + '<div class="pr-scroll"><table class="pr-table">'
+      + '<colgroup><col class="c-date"/><col class="c-name"/><col class="c-cat"/><col class="c-sum"/>'
+      + '<col class="c-open"/><col class="c-star"/><col class="c-act"/></colgroup>'
+      + '<thead><tr>'
+      + '<th>入库日期</th><th>项目</th><th>类别</th><th>项目简介</th><th>开源程度</th><th style="text-align:right">Star</th><th>操作</th>'
+      + '</tr></thead><tbody data-pr-body></tbody></table></div>'
+      + '</div>'
+      + '<p class="pr-note" data-pr-count></p>'
+      + '<p class="pr-note">数据保存在本机浏览器，来源是手工录入或 Excel 导入。换设备时用「导出 Excel」再「导入 Excel」即可迁移。</p>'
+      + '<div class="pr-note" data-pr-toast style="position:fixed;left:50%;bottom:28px;transform:translateX(-50%);padding:10px 18px;border:1px solid var(--border2);border-radius:10px;background:var(--panel2);color:var(--text);opacity:0;pointer-events:none;transition:opacity .2s"></div>'
+      + '<dialog class="pr-dialog" data-pr-dialog>'
+      + '<div class="pr-dlg-head"><h2 data-pr-dlg-title>新增项目</h2>'
+      + '<button class="pr-rowbtn" type="button" data-pr-cancel>关闭</button></div>'
+      + '<div class="pr-dlg-body">'
+      + '<div class="pr-field wide"><label for="prFName">项目名称</label><input id="prFName" data-pr-f-name maxlength="120" placeholder="作者/仓库名，例如 openai/whisper"></div>'
+      + '<div class="pr-field wide"><label for="prFUrl">仓库地址</label><input id="prFUrl" data-pr-f-url maxlength="300" placeholder="https://github.com/..."></div>'
+      + '<div class="pr-field"><label for="prFDate">入库日期</label><input id="prFDate" type="date" data-pr-f-date></div>'
+      + '<div class="pr-field"><label for="prFStars">Star 数（入库时）</label><input id="prFStars" type="number" min="0" step="100" data-pr-f-stars placeholder="0"></div>'
+      + '<div class="pr-field"><label for="prFCat">项目类别</label><select id="prFCat" data-pr-f-cat>' + options(CATS, '—') + '</select></div>'
+      + '<div class="pr-field"><label for="prFOpen">开源程度</label><select id="prFOpen" data-pr-f-open>' + options(OPEN, '—') + '</select></div>'
+      + '<div class="pr-field wide"><label for="prFSummary">项目简介</label><textarea id="prFSummary" data-pr-f-summary maxlength="400" placeholder="它是干什么的、好在哪"></textarea></div>'
+      + '<div class="pr-field wide"><label for="prFNote">备注</label><input id="prFNote" data-pr-f-note maxlength="200" placeholder="使用心得、待办、关联项目"></div>'
+      + '</div>'
+      + '<div class="pr-dlg-foot"><button class="btn" type="button" data-pr-cancel>取消</button>'
+      + '<button class="btn primary" type="button" data-pr-save>保存</button></div>'
+      + '</dialog>'
+      + '<input type="file" accept=".xlsx,.xls,.csv" data-pr-file hidden>';
+  }
+
+  /* ---------- 事件（全部委托在 root 上，重绘不用重绑） ---------- */
+  function onClick(e) {
+    var t = e.target.closest('[data-pr-new],[data-pr-tpl],[data-pr-import],[data-pr-export],'
+      + '[data-pr-reset],[data-pr-edit],[data-pr-del],[data-pr-save],[data-pr-cancel],[data-pr-bar]');
+    if (!t) return;
+    if (t.hasAttribute('data-pr-new')) return openEditor(null);
+    if (t.hasAttribute('data-pr-tpl')) return downloadTemplate();
+    if (t.hasAttribute('data-pr-import')) return $('[data-pr-file]').click();
+    if (t.hasAttribute('data-pr-export')) return exportXlsx();
+    if (t.hasAttribute('data-pr-save')) return submitEditor();
+    if (t.hasAttribute('data-pr-cancel')) return closeEditor();
+    if (t.hasAttribute('data-pr-reset')) { resetFilterInputs(); return render(); }
+    if (t.hasAttribute('data-pr-edit')) return openEditor(t.getAttribute('data-pr-edit'));
+    if (t.hasAttribute('data-pr-del')) return removeItem(t.getAttribute('data-pr-del'));
+    if (t.hasAttribute('data-pr-bar')) {
+      var k = t.getAttribute('data-pr-bar');
+      f.cat = f.cat === k ? '' : k;
+      $('[data-pr-cat]').value = f.cat;
+      return render();
+    }
+  }
+
+  function onFilter() { readFilters(); render(); }
+
+  function onChange(e) {
+    if (e.target.hasAttribute && e.target.hasAttribute('data-pr-file')) {
+      var file = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (file) importXlsx(file);
+      return;
+    }
+    if (e.target.closest && e.target.closest('.pr-filters')) onFilter();
+  }
+
+  function onKey(e) {
+    if (e.key === 'Enter' && e.target.closest && e.target.closest('[data-pr-dialog]')
+        && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); submitEditor(); }
+  }
+
+  /* ---------- 生命周期 ---------- */
+  function open(node, userId) {
+    if (active) close();
+    root = node;
+    user = userId || '';
+    active = true;
+    root.innerHTML = skeleton();
+    resetFilterInputs();
+    load();
+    render();
+    root.addEventListener('click', onClick);
+    root.addEventListener('input', onFilter);
+    root.addEventListener('change', onChange);
+    root.addEventListener('keydown', onKey);
+  }
+
+  function close() {
+    if (!root) return;
+    active = false;
+    root.removeEventListener('click', onClick);
+    root.removeEventListener('input', onFilter);
+    root.removeEventListener('change', onChange);
+    root.removeEventListener('keydown', onKey);
+    root.innerHTML = '';
+    root = null;
+    items = [];
+  }
+
+  window.ProjectsDesk = {
+    open: open,
+    close: close,
+    count: function () { return items.length; },
+    _pure: PURE
+  };
+}(typeof window !== 'undefined' ? window : globalThis));

@@ -12,12 +12,12 @@ def rd(n):
 
 
 theme = rd("theme.css")
-appcss = rd("app.css") + "\n" + rd("futures.css") + "\n" + rd("stocks.css") + "\n" + rd("financial.css")
+appcss = rd("app.css") + "\n" + rd("futures.css") + "\n" + rd("stocks.css") + "\n" + rd("financial.css") + "\n" + rd("projects.css")
 render = rd("render.js")
 parser = rd("parser.js")
 risk_parser = rd("risk_parser.js")
 exporter = rd("exporter.js")
-appjs = rd("futures.js") + "\n" + rd("stock_render.js") + "\n" + rd("financial.js") + "\n" + rd("stocks.js") + "\n" + rd("app.js")
+appjs = rd("futures.js") + "\n" + rd("stock_render.js") + "\n" + rd("financial.js") + "\n" + rd("stocks.js") + "\n" + rd("projects.js") + "\n" + rd("app.js")
 seed_raw = rd("copper_data.json")
 # 内嵌 JSON 里不能出现 </script>
 seed_raw = seed_raw.replace("<", "\\u003c")
@@ -103,6 +103,8 @@ __APPCSS__
       <div class="brand-wordmark">Flux<span>Desk</span></div>
       <button class="sidebar-toggle" id="btnSidebarToggle" type="button" aria-label="收起侧边栏" title="收起侧边栏">‹</button>
     </div>
+    <!-- 导航区可滚动：功能会越来越多，品牌与底部账户区保持固定 -->
+    <div class="workspace-side-scroll">
     <div class="workspace-switch"><div><b>风险与行情工作站</b><small id="dataSource">示例数据（铜）</small></div><span>⌄</span></div>
     <nav class="workspace-nav workspace-home-nav">
       <button class="app-tab active" data-tab="dash" title="总览" type="button"><span class="nav-glyph">▦</span><span class="nav-text">总览</span></button>
@@ -114,6 +116,7 @@ __APPCSS__
       <button class="app-tab nav-child" data-tab="history" title="数据看板历史" type="button"><span class="nav-glyph">▤</span><span class="nav-text">历史数据</span></button>
       <button class="app-tab" data-tab="futures" title="期货工具箱" type="button"><span class="nav-glyph">▥</span><span class="nav-text">期货工具箱</span></button>
       <button class="app-tab" data-tab="stocks" title="股票工作台" type="button"><span class="nav-glyph">▥</span><span class="nav-text">股票工作台</span></button>
+      <button class="app-tab" data-tab="projects" title="GitHub 项目收藏" type="button"><span class="nav-glyph">▨</span><span class="nav-text">GitHub 项目收藏</span></button>
     </nav>
     <div class="workspace-nav-label">风险管理</div>
     <nav class="workspace-nav">
@@ -124,6 +127,7 @@ __APPCSS__
     <nav class="workspace-nav">
       <button class="app-tab hidden" data-tab="admin" title="运营台" id="tabAdmin" type="button"><span class="nav-glyph">⚙</span><span class="nav-text">运营台</span><span class="dotbadge hidden" id="adminBadge">0</span></button>
     </nav>
+    </div>
     <div class="workspace-side-foot">
       <div class="workspace-avatar">FD</div><div><b id="sideUser">FluxDesk 用户</b><span id="sidePlan">已开通</span></div>
     </div>
@@ -200,6 +204,7 @@ __APPCSS__
 
   <section class="panel" id="panelFutures"><div id="futuresRoot" class="ft-workspace"></div></section>
   <section class="panel" id="panelStocks"><div id="stocksRoot" class="stock-workspace"></div></section>
+  <section class="panel" id="panelProjects"><div id="projectsRoot" class="projects-workspace"></div></section>
 
   <!-- 上传 -->
   <section class="panel" id="panelUpload">
@@ -395,6 +400,24 @@ __APPCSS__
 
       <div class="section">
         <div class="row-flex" style="justify-content:space-between">
+          <h3 style="margin:0">账户情况 <span class="chip" id="adminOnlineCnt">—</span></h3>
+          <div class="row-flex acct-range" id="acctRange">
+            <button class="btn sm" data-range="7" type="button">近 7 天</button>
+            <button class="btn sm active" data-range="30" type="button">近 30 天</button>
+            <button class="btn sm" data-range="90" type="button">近 90 天</button>
+            <button class="btn sm" data-range="all" type="button">全部</button>
+          </div>
+        </div>
+        <div class="hint mt8">
+          「在线」＝ <b>15 分钟内有活跃上报</b>（客户端每分钟一次）。<br/>
+          折线图按天聚合：<b>注册量</b>＝当天新增账号数，<b>活跃数</b>＝当天有过活跃上报的账号数（去重）。
+        </div>
+        <div class="acct-kpis" id="acctKpis"></div>
+        <div class="acct-chart" id="acctChart"></div>
+      </div>
+
+      <div class="section">
+        <div class="row-flex" style="justify-content:space-between">
           <h3 style="margin:0">订阅授权管理 <span class="chip warn" id="adminPending">—</span></h3>
           <button class="btn sm" id="btnRefreshAdmin" type="button">刷新</button>
         </div>
@@ -406,6 +429,7 @@ __APPCSS__
           <table class="tbl">
             <thead><tr>
               <th class="l">申请邮箱</th><th class="l">用户 ID</th><th class="l">状态</th>
+              <th class="l">登录状态</th>
               <th class="l">套餐</th><th class="l">到期时间</th><th class="l">申请时间</th><th class="l">操作</th>
             </tr></thead>
             <tbody id="adminBody"></tbody>
@@ -418,6 +442,9 @@ __APPCSS__
 </div>
 
 <div class="toast" id="toast"></div>
+<div class="busy" id="busy"><div class="spin"></div><div class="txt" id="busyTxt">处理中…</div></div>
+
+<!-- ==================== 冥想模式（全屏） ==================== -->
 <div class="meditation-view hidden" id="meditationView" role="dialog" aria-modal="true" aria-label="冥想模式">
   <canvas class="particle-canvas" id="meditationParticles" aria-hidden="true"></canvas>
   <div class="meditation-brand"><img class="brand-companion" src="/assets/fluxdesk-companion.png" alt=""/><div class="brand-wordmark">Flux<span>Desk</span></div></div>
@@ -429,8 +456,6 @@ __APPCSS__
     <div class="meditation-progress" id="meditationProgress"></div>
   </div>
 </div>
-
-<div class="busy" id="busy"><div class="spin"></div><div class="txt" id="busyTxt">处理中…</div></div>
 
 <!-- ==================== 成果导出（二级界面） ==================== -->
 <div class="exmodal hidden" id="exModal">

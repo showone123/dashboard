@@ -171,12 +171,23 @@ def find_insert_objects(src):
     return out
 
 
+def strip_sql_comments(sql):
+    """去掉 -- 行注释，供清单类提取使用。
+
+    ⚠️ 提取器扫的是**全文**，注释里只要拼出完整的 `CREATE POLICY xxx` 就会被
+    当成真语句（2026-09-21 加 002 时踩到：注释里解释"PostgreSQL 没有
+    CREATE POLICY IF NOT EXISTS 写法"，结果抓出一个名为 IF 的策略）。
+    注释是给人读的，不该影响门禁判据。
+    """
+    return "\n".join(ln.split("--")[0] for ln in sql.splitlines())
+
+
 def extract_policies(sql):
-    return sorted(set(re.findall(r"CREATE\s+POLICY\s+(\w+)", sql)))
+    return sorted(set(re.findall(r"CREATE\s+POLICY\s+(\w+)", strip_sql_comments(sql))))
 
 
 def extract_tables(sql):
-    return sorted(set(re.findall(r"CREATE\s+TABLE\s+(?:public\.)?(\w+)", sql)))
+    return sorted(set(re.findall(r"CREATE\s+TABLE\s+(?:public\.)?(\w+)", strip_sql_comments(sql))))
 
 
 # ------------------------------------------------------------------ 各项检查
@@ -426,34 +437,107 @@ def check_contract():
                 bad("%s 被改动（会导致连不上云服务 / 换错环境）" % label,
                     "契约 %s" % expect)
 
-    # ---- 6.5 数据库策略（两份文件 + 一致性）----
-    sqls = {}
-    for rel in ("migrations/001_init.sql", "db/DB_SCHEMA.sql"):
-        t = rd(*rel.split("/"))
-        if t is None:
-            bad("缺少 %s" % rel)
-            continue
-        sqls[rel] = t
-        pol = extract_policies(t)
+    # ---- 6.5 数据库策略（迁移汇总 + 结构文档 + 一致性）----
+    # 契约描述的是**最终状态**，而最终状态是「001 + 002 + …」全部迁移叠加的结果。
+    # ⚠️ 所以要对 migrations/ 下**全部** *.sql 取并集再比 —— 2026-09-21 加了 002
+    # 之后才发现旧写法（只读 001）会与「001 已应用、不要再改」的铁律互相打架：
+    # 不动 001 就永远差一条策略，改 001 又会让老环境与新环境分叉。
+    # 并集还顺带获得一个好处：迁移之间重复建同名策略（会 42710 报错）能被查出来。
+    mig_files = sorted(os.path.join(HERE, "migrations", f)
+                       for f in os.listdir(os.path.join(HERE, "migrations"))
+                       if f.endswith(".sql"))
+    if not mig_files:
+        bad("migrations/ 下没有找到任何 .sql")
+    agg_pol, agg_tab, dup_pol = set(), set(), set()
+    for path in mig_files:
+        t = open(path, encoding="utf-8").read()
+        # ⚠️ 必须复用 extract_policies（它带 CREATE 前缀）——
+        # 自己写 `CREATE\s+POLICY\s+(\w+)` 的近似版会漏掉前缀，
+        # 把 `DROP POLICY IF EXISTS foo` 里的 IF 当成策略名（2026-09-21 踩过）。
+        for n in extract_policies(t):
+            if n in agg_pol:
+                dup_pol.add(n)
+            agg_pol.add(n)
+        agg_tab.update(extract_tables(t))
+    if dup_pol:
+        bad("迁移之间有重复的 CREATE POLICY（重跑会报 42710 策略已存在）",
+            "重复：%s" % ", ".join(sorted(dup_pol)))
+    mig_pol, mig_tab = sorted(agg_pol), sorted(agg_tab)
+    if mig_pol == fc["db_policies"]:
+        ok("migrations/*.sql 汇总策略一致（%d 条 / %d 个文件）" % (len(mig_pol), len(mig_files)))
+    else:
+        bad("migrations/*.sql 汇总后的策略清单与契约不符",
+            "契约：%s\n实际：%s" % (", ".join(fc["db_policies"]), ", ".join(mig_pol)))
+    if mig_tab == fc["db_tables"]:
+        ok("migrations/*.sql 汇总表清单一致（%d 张）" % len(mig_tab))
+    else:
+        bad("migrations/*.sql 汇总后的表清单与契约不符",
+            "契约：%s\n实际：%s" % (", ".join(fc["db_tables"]), ", ".join(mig_tab)))
+
+    schema_t = rd("db", "DB_SCHEMA.sql")
+    if schema_t is None:
+        bad("缺少 db/DB_SCHEMA.sql")
+    else:
+        pol, tabs = extract_policies(schema_t), extract_tables(schema_t)
         if pol == fc["db_policies"]:
-            ok("%s 策略一致（%d 条）" % (rel, len(pol)))
+            ok("db/DB_SCHEMA.sql 策略一致（%d 条）" % len(pol))
         else:
-            bad("%s 的策略清单与契约不符" % rel,
+            bad("db/DB_SCHEMA.sql 的策略清单与契约不符",
                 "契约：%s\n实际：%s" % (", ".join(fc["db_policies"]), ", ".join(pol)))
-        tabs = extract_tables(t)
         if tabs == fc["db_tables"]:
-            ok("%s 表清单一致（%d 张）" % (rel, len(tabs)))
+            ok("db/DB_SCHEMA.sql 表清单一致（%d 张）" % len(tabs))
         else:
-            bad("%s 的表清单与契约不符" % rel,
+            bad("db/DB_SCHEMA.sql 的表清单与契约不符",
                 "契约：%s\n实际：%s" % (", ".join(fc["db_tables"]), ", ".join(tabs)))
-    # 两份文件必须同步，否则文档与可执行版本会分叉
-    if len(sqls) == 2:
-        a, b = (extract_policies(v) for v in sqls.values())
-        if a == b:
-            ok("migrations/001_init.sql 与 db/DB_SCHEMA.sql 策略同步")
+        # 迁移汇总与结构文档必须同步，否则文档与实际会分叉
+        if mig_pol == pol:
+            ok("migrations/*.sql 汇总 与 db/DB_SCHEMA.sql 策略同步")
         else:
-            bad("迁移文件与结构文档的策略不一致（改一处忘改另一处）",
-                "migrations: %s\ndb: %s" % (", ".join(a), ", ".join(b)))
+            bad("迁移汇总与结构文档的策略不一致（改一处忘改另一处）",
+                "migrations/*.sql 汇总：%s\ndb/DB_SCHEMA.sql: %s" % (", ".join(mig_pol), ", ".join(pol)))
+
+    # ---- 6.5b 列级授权一致性（access_grants 的 UPDATE 权限）----
+    # 2026-09-21 加 002 时踩到的坑：策略只管"行"，GRANT 才管"列"。两者必须各就各位。
+    # 只用一条正则查"某列是否被授出"，因为这里的失效模式是**静默**的：
+    #   · 只授 last_seen_at → 心跳正常，但运营台「开通/暂停」按钮报 42501（当时险些上线）
+    #   · 表级 GRANT UPDATE 复活 → 客户可自助改 status 提权（安全底线失守）
+    # 两种都不报错、不崩页面，只能靠门禁拦。
+    grant_src = "".join(open(p, encoding="utf-8").read() for p in mig_files) + "\n" + (schema_t or "")
+
+    def has_col_grant(col):
+        return re.search(r"GRANT\s+UPDATE\s*\([^)]*\b%s\b[^)]*\)\s*ON\s+public\.access_grants"
+                         % re.escape(col), grant_src, re.I) is not None
+
+    table_level = re.search(r"GRANT\s+UPDATE\s+ON\s+public\.access_grants", grant_src, re.I)
+    if table_level:
+        bad("access_grants 存在表级 GRANT UPDATE —— 客户可自助改 status / expires_at 提权",
+            "命中：%s\n应改为列级 GRANT UPDATE (…)，并把行边界交给 RLS 策略。"
+            % table_level.group(0))
+    else:
+        ok("access_grants 无表级 UPDATE 授权（已收口为列级）")
+
+    if has_col_grant("last_seen_at"):
+        ok("access_grants 授予了 last_seen_at 列（心跳可写）")
+    else:
+        bad("access_grants 未授予 last_seen_at 列 —— 心跳会恒 42501 且被前端静默吞掉")
+
+    # 运营台走的是同一个 authenticated 角色，它的 update(patch) 必须能落到这些列上。
+    # 缺任意一列 ⇒ 运营台自己先挂（这是当时差点漏掉的那条）。
+    op_cols = ["status", "plan", "expires_at", "updated_at", "note"]
+    lack = [c for c in op_cols if not has_col_grant(c)]
+    if not lack:
+        ok("access_grants 授予了运营台改状态所需的 %d 列" % len(op_cols))
+    else:
+        bad("access_grants 缺少运营台所需的列级 UPDATE 授权",
+            "缺：%s\n运营台与客户共用 authenticated 角色，缺列会让「开通/暂停」按钮报 42501。"
+            % ", ".join(lack))
+
+    # 反向：提权面列绝不能被授出
+    for danger in ["owner_id", "id", "created_at"]:
+        if has_col_grant(danger):
+            bad("access_grants 非法授予了提权面列 %s 的 UPDATE 权限" % danger)
+        else:
+            ok("access_grants 未授予提权面列 %s" % danger)
 
     # ---- 6.6 部署服务器 ----
     sp = os.path.join(HERE, "dist", "server.py")

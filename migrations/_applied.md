@@ -29,4 +29,30 @@
 
 ## 待应用
 
-（无）
+| # | 迁移 | 内容 | 状态 |
+|---|---|---|---|
+| 002 | `002_activity.sql` | `access_grants` 加 `last_seen_at` + **REVOKE 表级 UPDATE** + **两条列级 GRANT**（心跳列 / 运营台改状态列）+ `grants_update_own_heartbeat` 策略 + 部分索引 | ⏸️ **尚未执行**（2026-09-21 本地完成 + 已过门禁，等用户批准后再上生产） |
+
+执行顺序（**6 条语句，一条一次调用** `db_exec_sql(mode=migrate)`）：
+
+| 序 | 语句 | 作用 |
+|---|---|---|
+| 1 | `ALTER TABLE ... ADD COLUMN IF NOT EXISTS last_seen_at timestamptz` | 加心跳字段 |
+| 2 | `REVOKE UPDATE ON public.access_grants FROM authenticated` | 撤掉全列 UPDATE |
+| 3 | `GRANT UPDATE (last_seen_at) ON public.access_grants TO authenticated` | 心跳只写这一列 |
+| 4 | `GRANT UPDATE (status, plan, expires_at, updated_at, note) ... TO authenticated` | ★ 运营台改状态用的列 |
+| 5 | `DROP POLICY IF EXISTS grants_update_own_heartbeat` + `CREATE POLICY ...` | 本人写自己那行 |
+| 6 | `CREATE INDEX IF NOT EXISTS access_grants_last_seen_idx ...` | 在线人数排序 |
+
+> ⚠️ **002 不能只挑着跑**：
+> - 只加列不加 GRANT ⇒ 心跳全静默失败（前端 catch 吞掉，看不出错）。
+> - 只 GRANT 不 REVOKE ⇒ **普通用户可自助开通**（`authenticated` 原本有全列 UPDATE，
+>   加了自己的行政策就等于把 status 交给用户）。
+> - **只授 `last_seen_at` 不授第 4 条的运营列 ⇒ 运营台「开通 / 暂停」按钮先报 42501**。
+>   运营台走的是**同一个 `authenticated` 角色**（前端只是普通 `update(patch)`，
+>   没有 service_role 通道）。行级隔离靠策略，列级隔离靠 GRANT —— 两层各管一件事。
+> - 第 4 条**绝不能含** `owner_id` / `id` / `created_at`（那是提权面）。
+
+执行后按 `verify.py §6.5` 的聚合口径复核：策略总数应为 **12**。
+**回滚**：`GRANT UPDATE ON public.access_grants TO authenticated;`（恢复表级全列）
++ `DROP POLICY IF EXISTS grants_update_own_heartbeat ...`；`last_seen_at` 列可留（可空，不影响旧代码）。

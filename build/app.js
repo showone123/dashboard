@@ -204,6 +204,7 @@
     window.addEventListener('resize', resize); resize(); window.requestAnimationFrame(draw);
   }
 
+
   var meditation = { index: 0, timer: null, ready: false };
   var meditationLines = [
     ['把注意力放回呼吸。', 'Return to your breath.'],
@@ -576,6 +577,48 @@
     return (r2.data && r2.data[0]) || null;
   }
 
+  /* ==================== 活跃心跳 ====================
+     给运营台提供「在线 / 离线」判据：每 60 秒把自己的 last_seen_at 写一次。
+     运营台把「15 分钟内有心跳」判为在线 —— 阈值比心跳间隔宽得多，就是为了
+     容忍网络抖动与切后台，不会闪成离线。
+
+     ⚠️ 三个必须守住的点，改动时别踩：
+     1. **静默失败**：心跳失败绝不能影响任何主流程（权限校验、看板、导出）。
+        所以这里只有 catch 吞掉，没有 toast、没有 busy、不 throw。
+     2. **只写 last_seen_at**：数据库侧靠列级 GRANT 兜底（见 migrations/002），
+        前端也不要去写 status/plan —— 写了就是 42501。
+     3. **页面隐藏就别写**：`document.hidden` 时不发，免得"关了页面还显示在线"。
+         回来时立即补一次，避免离开太久后状态失真。
+  */
+  var HEARTBEAT_MS = 60000;
+  var heartbeatTimer = null;
+
+  function stopHeartbeat() {
+    if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+  }
+
+  async function beat() {
+    if (!S.userId || document.hidden) return;
+    try {
+      // 用 owner_id 定位（不是 id）—— 前端手上只有 owner_id，且 RLS 认的就是它
+      await cloud.database.from('access_grants')
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq('owner_id', S.userId);
+    } catch (e) { /* 静默：心跳失败不影响使用 */ }
+  }
+
+  function startHeartbeat() {
+    stopHeartbeat();
+    if (!S.userId) return;
+    beat();                                    // 立即打一次，别等 60 秒
+    heartbeatTimer = setInterval(beat, HEARTBEAT_MS);
+  }
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) return;
+    if (S.userId && S.grant) beat();           // 切回来补一次
+  });
+
   function evalGrant(g) {
     if (!g) return { ok: false, code: 'none', tone: 'red', title: '您暂时没有访问权限', sub: '系统未找到您的开通记录，请联系管理员处理。' };
     var st = g.status;
@@ -647,6 +690,7 @@
     var ev = evalGrant(g);
     // 运营方即使自己未订阅也放行，否则无法进入运营台开展审批
     if (!ev.ok && !S.isOperator) { renderGate(g, ev); return; }
+    startHeartbeat();          // 放行的用户才开始上报活跃（被挡住的不算"在用"）
     await enterApp(ev);
   }
 
@@ -672,6 +716,7 @@
 
   function doSignOut() {
     FuturesDesk.close();
+    stopHeartbeat();           // 登出即停，否则会以已登出身份继续上报活跃
     cloud.auth.signOut().then(function () {
       S.userId = null; S.userEmail = ''; S.grant = null; S.isOperator = false;
       S.data = null; S.dataSource = '示例数据（铜）'; S.datasets = []; S.pending = null; S.mounted = false;
@@ -812,14 +857,14 @@
     var was = curTab;
     curTab = name;
     var panelName = name === 'risk-history' ? 'risk' : name;
-    ['dash', 'market', 'upload', 'history', 'risk', 'admin', 'futures', 'stocks'].forEach(function (t) {
+    ['dash', 'market', 'upload', 'history', 'risk', 'admin', 'futures', 'stocks', 'projects'].forEach(function (t) {
       var p = $('panel' + t.charAt(0).toUpperCase() + t.slice(1));
       if (p) p.classList.toggle('active', t === panelName);
     });
     document.querySelectorAll('.app-tab').forEach(function (b) {
       b.classList.toggle('active', b.getAttribute('data-tab') === name);
     });
-    var titles = { dash: '总览', market: '数据看板', upload: '数据看板 / 数据中心', history: '数据看板 / 历史数据', risk: '实控人风险日志', 'risk-history': '实控人风险日志 / 历史数据', admin: '运营台', futures: '期货工具箱', stocks: '股票工作台' };
+    var titles = { dash: '总览', market: '数据看板', upload: '数据看板 / 数据中心', history: '数据看板 / 历史数据', risk: '实控人风险日志', 'risk-history': '实控人风险日志 / 历史数据', admin: '运营台', futures: '期货工具箱', stocks: '股票工作台', projects: 'GitHub 项目收藏' };
     if ($('workspaceCrumb')) $('workspaceCrumb').textContent = titles[name] || '工作台';
     if (was && was !== name) window.scrollTo(0, 0);
     if (name === 'dash') {
@@ -841,6 +886,8 @@
     else FuturesDesk.close();
     if (name === 'stocks') StocksDesk.open($('stocksRoot'), S.userId);
     else StocksDesk.close();
+    if (name === 'projects') ProjectsDesk.open($('projectsRoot'), S.userId);
+    else ProjectsDesk.close();
     if (name === 'history') loadDatasets();
     if (name === 'risk' || name === 'risk-history') loadDatasets().then(function () {
       if (S.riskData) return;
@@ -1260,12 +1307,27 @@
   }
 
   /* ==================== 运营台 ==================== */
+  /* 测试/本地渲染钩子：把行数据直接喂给两个视图，不经过数据库。
+     只在 _verify/ 的本地渲染脚本里用；线上永远不会被调用。
+     存在的理由：给运营台做本地截图时不想连真库（会污染真数据、也要真运营方账号）。*/
+  function renderOperatorWith(rows) {
+    rows = rows || [];
+    S.grantRows = rows;
+    var pend = rows.filter(function (x) { return x.status === 'pending'; }).length;
+    if ($('adminPending')) {
+      $('adminPending').textContent = pend ? (pend + ' 条待开通') : '暂无待开通申请';
+      $('adminPending').className = 'chip ' + (pend ? 'warn' : 'good');
+    }
+    renderOperator(rows);
+  }
+
   async function loadOperator() {
     if (!S.isOperator) return;
     try {
       var r = await cloud.database.from('access_grants').select('*').order('created_at', { ascending: false }).limit(500);
       if (r.error) throw r.error;
       var rows = r.data || [];
+      S.grantRows = rows;          // 缓存给「账户情况」看板切换时间范围时重画用
       var pend = rows.filter(function (x) { return x.status === 'pending'; }).length;
       $('adminPending').textContent = pend ? (pend + ' 条待开通') : '暂无待开通申请';
       $('adminPending').className = 'chip ' + (pend ? 'warn' : 'good');
@@ -1274,7 +1336,7 @@
       badge.classList.toggle('hidden', !pend);
       renderOperator(rows);
     } catch (e) {
-      $('adminBody').innerHTML = '<tr><td colspan="7"><div class="empty-state">读取失败：' + esc(e && e.message ? e.message : String(e)) + '</div></td></tr>';
+      $('adminBody').innerHTML = '<tr><td colspan="8"><div class="empty-state">读取失败：' + esc(e && e.message ? e.message : String(e)) + '</div></td></tr>';
     }
   }
 
@@ -1284,9 +1346,22 @@
     return '<span class="badge ' + m[0] + '">' + esc(m[1]) + '</span>';
   }
 
+  /* 在线阈值：15 分钟。心跳间隔 60 秒，宽裕 15 倍 —— 容忍网络抖动与切后台，
+     不会频繁闪烁。改这个值前先想清楚：调太小会误报离线，调太大会把刚走的人算在线。 */
+  var ONLINE_WINDOW_MS = 15 * 60 * 1000;
+
+  function onlineBadge(lastSeen) {
+    if (!lastSeen) return '<span class="badge b-gray">从未活跃</span>';
+    var t = new Date(lastSeen).getTime();
+    var online = Date.now() - t < ONLINE_WINDOW_MS;
+    return '<span class="badge ' + (online ? 'b-green' : 'b-gray') + '">' +
+      (online ? '● 在线' : '离线') + '</span>' +
+      '<div class="mono-small dim" style="margin-top:2px">' + esc(fmtTime(lastSeen)) + '</div>';
+  }
+
   function renderOperator(rows) {
     if (!rows.length) {
-      $('adminBody').innerHTML = '<tr><td colspan="7"><div class="empty-state">还没有客户注册。</div></td></tr>';
+      $('adminBody').innerHTML = '<tr><td colspan="8"><div class="empty-state">还没有客户注册。</div></td></tr>';
       return;
     }
     $('adminBody').innerHTML = rows.map(function (g) {
@@ -1295,6 +1370,7 @@
         '<td class="l">' + esc(g.email || '（未登记邮箱）') + '</td>' +
         '<td class="l"><code class="mono-small">' + esc(g.owner_id) + '</code></td>' +
         '<td class="l">' + statusBadge(g.status) + '</td>' +
+        '<td class="l">' + onlineBadge(g.last_seen_at) + '</td>' +
         '<td class="l">' + esc(g.plan || '—') + '</td>' +
         '<td class="l nowrap">' + esc(g.expires_at ? fmtTime(g.expires_at) + (dl !== null ? '（' + dl + '天）' : '') : '—') + '</td>' +
         '<td class="l mono-small">' + esc(fmtTime(g.created_at)) + '</td>' +
@@ -1307,6 +1383,122 @@
     $('adminBody').querySelectorAll('[data-approve]').forEach(function (b) { b.addEventListener('click', function () { approve(b.getAttribute('data-approve'), 365); }); });
     $('adminBody').querySelectorAll('[data-custom]').forEach(function (b) { b.addEventListener('click', function () { approve(b.getAttribute('data-custom'), null); }); });
     $('adminBody').querySelectorAll('[data-susp]').forEach(function (b) { b.addEventListener('click', function () { suspend(b.getAttribute('data-susp')); }); });
+    renderAccountBoard(rows);
+  }
+
+  /* ==================== 账户情况看板 ====================
+     数据全部来自已经查回来的 access_grants（loadOperator 一次查询喂两个视图），
+     所以切换时间范围**不需要再打接口** —— 纯本地重算重画。
+
+     ponytail: 「活跃数」按 last_seen_at 的**当天**去重统计。这在当前量级
+     （几十个账号）完全够用；真正的 DAU 应该单独存一张日粒度活跃表，
+     等账号数上千、或需要看"人均使用时长"时再上。
+  */
+  var acctRange = '30';
+
+  function dayKey(d) {                       // 本地时区的 YYYY-MM-DD
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  function renderAccountBoard(rows) {
+    var now = new Date();
+    var days = acctRange === 'all' ? 0 : parseInt(acctRange, 10);
+
+    // 时间轴的起点：固定范围从"今天往前 N-1 天"；全部范围从最早一条记录算起
+    var start;
+    if (days) {
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1));
+    } else {
+      var stamps = rows.map(function (r) { return new Date(r.created_at).getTime(); })
+        .filter(function (t) { return !isNaN(t); });
+      start = stamps.length ? new Date(Math.min.apply(null, stamps)) : new Date(now);
+      start = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    }
+
+    // 建轴：每天一个点
+    var axis = [], cur = new Date(start);
+    while (cur <= now) { axis.push(dayKey(cur)); cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 1); }
+
+    var regs = {}, acts = {};
+    axis.forEach(function (k) { regs[k] = 0; acts[k] = 0; });
+    rows.forEach(function (r) {
+      var ck = dayKey(new Date(r.created_at));
+      if (ck in regs) regs[ck]++;
+      if (r.last_seen_at) {
+        var sk = dayKey(new Date(r.last_seen_at));
+        if (sk in acts) acts[sk]++;
+      }
+    });
+
+    var regSeries = axis.map(function (k) { return regs[k]; });
+    var actSeries = axis.map(function (k) { return acts[k]; });
+
+    // KPI：在线数用同一套 15 分钟阈值；累计注册是全部历史（不受时间范围影响）
+    var online = rows.filter(function (r) {
+      return r.last_seen_at && (now.getTime() - new Date(r.last_seen_at).getTime() < ONLINE_WINDOW_MS);
+    }).length;
+    var sum = function (a) { return a.reduce(function (x, y) { return x + y; }, 0); };
+    $('adminOnlineCnt').textContent = online + ' 人在线';
+    $('adminOnlineCnt').className = 'chip ' + (online ? 'good' : '');
+    $('acctKpis').innerHTML = [
+      ['当前在线', online, '15 分钟内有活跃'],
+      ['累计注册', rows.length, '全部历史'],
+      ['区间新增', sum(regSeries), acctRange === 'all' ? '全部时间' : '近 ' + acctRange + ' 天'],
+      ['区间活跃账号', acts ? Object.keys(acts).filter(function (k) { return acts[k] > 0; }).length : 0, '有过上报的去重账号']
+    ].map(function (k) {
+      return '<div class="acct-kpi"><div class="v">' + k[1] + '</div><div class="k">' + k[0] + '</div><div class="s">' + k[2] + '</div></div>';
+    }).join('');
+
+    $('acctChart').innerHTML = lineChart(axis, [
+      { name: '注册量', color: '#e0a03c', data: regSeries },
+      { name: '活跃数', color: '#31aa78', data: actSeries }
+    ]);
+  }
+
+  /* 手绘折线：两条序列共用一套坐标轴。
+     ⚠️ 用空串而不是 0 表示"这天没有数据"的话，折线会断 —— 这里刻意保留 0，
+     因为「当天没人注册」本身就是真实且有意义的信息。
+     ⚠️ 顶值加 15% 余量：两条线共轴时，峰值那天会正好压在顶线上（看着像被裁掉）。
+     刻度取整到"比 max 大的整数"，避免出现 0/0.75/1.5 这种读不出意义的刻度。 */
+  function lineChart(axis, series) {
+    var W = 720, H = 260, PL = 44, PR = 18, PT = 18, PB = 30;
+    var iw = W - PL - PR, ih = H - PT - PB;
+    var peak = 0;
+    series.forEach(function (s) { s.data.forEach(function (v) { if (v > peak) peak = v; }); });
+    var max = Math.max(1, Math.ceil(peak * 1.15));
+    var x = function (i) { return PL + (axis.length < 2 ? iw / 2 : iw * i / (axis.length - 1)); };
+    var y = function (v) { return PT + ih - ih * v / max; };
+
+    var grid = '';
+    for (var g = 0; g <= 4; g++) {
+      var gv = max * g / 4, gy = y(gv);
+      grid += '<line x1="' + PL + '" y1="' + gy + '" x2="' + (W - PR) + '" y2="' + gy + '" stroke="var(--chart-grid)" stroke-width="1"/>' +
+        '<text x="' + (PL - 6) + '" y="' + (gy + 3) + '" text-anchor="end" font-size="9" fill="var(--chart-axis)">' + Math.round(gv) + '</text>';
+    }
+
+    // x 轴标签最多 6 个，避免 90 天时挤成一团
+    // y=H-10 是唯一一处 x 轴标签行（y 轴刻度在 gy+3，gy∈[PT, PT+ih]，不会撞上来）。
+    // 断言脚本靠这个锚点区分「轴刻度」与「网格刻度」，改这里要同步改 _verify/run_admin_render.py。
+    var step = Math.max(1, Math.ceil(axis.length / 6)), ticks = '';
+    axis.forEach(function (k, i) {
+      if (i % step && i !== axis.length - 1) return;
+      ticks += '<text x="' + x(i) + '" y="' + (H - 10) + '" text-anchor="middle" font-size="9" fill="var(--chart-axis)">' +
+        k.slice(5) + '</text>';
+    });
+
+    var paths = series.map(function (s) {
+      var d = s.data.map(function (v, i) { return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1); }).join(' ');
+      return '<path d="' + d + '" fill="none" stroke="' + s.color + '" stroke-width="2" stroke-linejoin="round"/>';
+    }).join('');
+
+    var legend = series.map(function (s) {
+      return '<span class="acct-lg"><i style="background:' + s.color + '"></i>' + esc(s.name) + '</span>';
+    }).join('');
+
+    var empty = axis.length < 2 ? '<text x="' + (W / 2) + '" y="' + (H / 2) + '" text-anchor="middle" font-size="11" fill="var(--chart-axis)">数据不足，暂时画不出趋势</text>' : '';
+
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" class="acct-svg" preserveAspectRatio="xMidYMid meet">' +
+      grid + ticks + paths + empty + '</svg><div class="acct-legend">' + legend + '</div>';
   }
 
   async function updateGrant(id, patch, okMsg) {
@@ -2012,6 +2204,14 @@
 
     $('btnRefreshHist').addEventListener('click', function () { loadDatasets().then(function () { toast('ok', '历史列表已刷新'); }); });
     $('btnRefreshAdmin').addEventListener('click', function () { loadOperator().then(function () { toast('ok', '授权列表已刷新'); }); });
+    // 时间范围切换：数据全在手上，只重画不重查
+    $('acctRange').querySelectorAll('[data-range]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        acctRange = b.getAttribute('data-range');
+        $('acctRange').querySelectorAll('[data-range]').forEach(function (x) { x.classList.toggle('active', x === b); });
+        renderAccountBoard(S.grantRows || []);
+      });
+    });
     $('btnTemplate').addEventListener('click', function () {
       try {
         var wb = XLSX.utils.book_new();
@@ -2068,6 +2268,10 @@
         '<div class="auth-wrap"><div class="auth-card"><div class="gate-title red">启动失败</div><div class="gate-sub">' + esc(e && e.message ? e.message : String(e)) + '</div></div></div>');
     });
   }
+
+  /* 本地渲染脚本的入口（见 _verify/run_admin_render.py）。
+     只在 IIFE 作用域上挂一个引用，不给线上任何额外能力 —— 它只是一次纯函数调用。*/
+  window.renderOperatorWith = renderOperatorWith;
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();

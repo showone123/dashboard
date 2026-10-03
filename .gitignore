@@ -37,6 +37,11 @@ outputs/*
 *.png
 *.jpg
 !assets/fluxdesk-companion.png
+# 验收证据目录（线上页面归档、探针脚本产物）。
+# 为什么整体忽略而不是只忽略 *.png：github_sync.py 的 --push 用
+# `git ls-files -co --exclude-standard` 选文件，且 git_push 会先 `git add -A`。
+# 只靠 *.png 挡不住 _verify/deploy/live.html 这类归档 —— 会被当成源码推上仓库。
+/_verify/
 
 # Python
 __pycache__/
