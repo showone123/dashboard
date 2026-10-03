@@ -77,6 +77,29 @@ CREATE TABLE public.operators (
     CONSTRAINT operators_pkey PRIMARY KEY (owner_id)
 );
 
+-- 1.5 GitHub 项目收藏表（迁移 003）：运营方独占的选题库。
+--     ⚠️ 与 1.1~1.3 不同：id 是**前端生成的 text**（uid()，形如 'pm1x2y3z4'），
+--        不是 bigint IDENTITY。原因见迁移 003 的设计要点 3：
+--        Excel 批量导入要幂等，沿用前端 id 才能"重导同一份表 = 覆盖"而不是"再插一批"。
+--     ⚠️ owner_id 必须 text（platform user.id 是 19 位数字字符串，不是 uuid）。
+--     ⚠️ stars 必须是 integer：存 text 会让 "9000" < "10000"。
+CREATE TABLE public.projects (
+    id          text        NOT NULL,
+    owner_id    text        NOT NULL DEFAULT auth.uid(),
+    added_at    text        NOT NULL,                    -- 入库日期 'YYYY-MM-DD'（业务字段，非审计时间）
+    name        text        NOT NULL,                    -- owner/repo
+    url         text        NOT NULL DEFAULT '',
+    category    text        NOT NULL DEFAULT '其他',
+    summary     text        NOT NULL DEFAULT '',
+    openness    text        NOT NULL DEFAULT '源码可见',
+    stars       integer     NOT NULL DEFAULT 0,
+    note        text        NOT NULL DEFAULT '',
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    updated_at  timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT projects_pkey     PRIMARY KEY (id),
+    CONSTRAINT projects_stars_ck CHECK (stars >= 0)
+);
+
 
 -- =============================================================================
 --  2. 表级授权（第 1 道门）
@@ -98,12 +121,20 @@ GRANT UPDATE (status, plan, expires_at, updated_at, note)
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.datasets       TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.notifications   TO authenticated;   -- 实际写入受 RLS 限制为运营方
 GRANT SELECT                          ON public.operators      TO authenticated;   -- 只读，用于判断自己是不是运营方
+-- projects（迁移 003）：四个 DML 动作都授，但行级被 projects_operator_all 收死成"仅运营方"。
+-- ⚠️ 这张表**没有序列**要授 —— id 由前端生成（text），不是 IDENTITY / serial。
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.projects       TO authenticated;
+REVOKE TRUNCATE, REFERENCES, TRIGGER ON public.projects       FROM authenticated, anon;  -- 新表要自己再收一次，见下方说明
+REVOKE ALL                            ON public.projects      FROM anon;
 
 GRANT USAGE, SELECT ON SEQUENCE public.notifications_id_seq TO authenticated;     -- bigserial 需要显式序列权限
 GRANT USAGE, SELECT ON SEQUENCE public.access_grants_id_seq TO authenticated;     -- IDENTITY 列同样需要
 GRANT USAGE, SELECT ON SEQUENCE public.datasets_id_seq      TO authenticated;
 
 -- 收紧：不要把能绕过 RLS 的权限留在 authenticated / anon 手上
+-- ⚠️ 下面这句 `ON ALL TABLES` 只覆盖**执行那一刻已存在**的表。
+--    迁移 003 新建的 public.projects 不在其中，所以它自己又单独 REVOKE 了一次
+--    （见上面第 2 节的第三行）。新增表时别忘了这一步。
 REVOKE TRUNCATE, REFERENCES, TRIGGER ON ALL TABLES    IN SCHEMA public FROM authenticated, anon;
 REVOKE ALL                            ON ALL SEQUENCES IN SCHEMA public FROM anon;
 
@@ -115,13 +146,16 @@ ALTER TABLE public.access_grants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.datasets      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.operators     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.projects      ENABLE ROW LEVEL SECURITY;
 
 
 -- =============================================================================
---  4. RLS 策略（共 11 条）
+--  4. RLS 策略（共 13 条）
 --     模型：read-own + operator-override。
 --       · 普通用户只能看/改 owner_id = auth.uid() 的行；
 --       · operators 里登记过的用户额外获得「看全部 / 改全部」的旁路。
+--       · projects 是**纯 operator-only**（没有 read-own 这一半）——
+--         它不是「用户自己的数据 + 运营方能看」，而是「运营方独占」。
 -- =============================================================================
 
 -- ---- 4.1 access_grants（4 条）----
@@ -198,6 +232,22 @@ CREATE POLICY notifications_operator_write ON public.notifications
 CREATE POLICY operators_read_own ON public.operators
     FOR SELECT TO authenticated USING (owner_id = auth.uid());
 
+-- ---- 4.5 projects（1 条）----
+-- 运营方独占：读/增/改/删四个动作合成一条 FOR ALL，条件同一句 EXISTS。
+-- ⚠️ 为什么不拆成四条（read/insert/update/delete）：
+--    本表的权限模型是"全有或全无"，拆开只是把同一句 EXISTS 抄四遍，
+--    反而多出"漏配一条 → 某动作 42501"的风险。语义上确实是一条规则。
+-- ⚠️ USING 与 WITH CHECK **都要写**：
+--    USING 管 SELECT/UPDATE/DELETE 能看到与能动哪些行；
+--    WITH CHECK 管 INSERT/UPDATE 允许写进什么。
+--    只写 USING ⇒ 非运营方能往表里灌数据；只写 WITH CHECK ⇒ 写得进但读不出。
+-- ⚠️ 子查询里的 operators 自身也走 RLS（operators_read_own 只让每用户看到自己那行），
+--    恰好就是这里要的语义：运营方 → 查到 1 行 → true；非运营方 → 空集 → false。
+CREATE POLICY projects_operator_all ON public.projects
+    FOR ALL TO authenticated
+    USING      (EXISTS (SELECT 1 FROM public.operators o WHERE o.owner_id = auth.uid()))
+    WITH CHECK (EXISTS (SELECT 1 FROM public.operators o WHERE o.owner_id = auth.uid()));
+
 
 -- =============================================================================
 --  5. 上线自检清单（每次改动权限后都应该跑一遍）
@@ -211,7 +261,7 @@ CREATE POLICY operators_read_own ON public.operators
 --      JOIN pg_namespace n ON n.oid=c.relnamespace
 --      WHERE n.nspname='public' AND c.relkind='r';            -- 期望：rls 全 true
 --
---  5.3 列出全部策略核对数量（期望 11 条）：
+--  5.3 列出全部策略核对数量（期望 13 条）：
 --      SELECT tablename, policyname, cmd FROM pg_policies WHERE schemaname='public';
 --
 --  5.4 真实流量验证（比读元数据更可信）—— 拿 publishableKey 匿名请求：
@@ -245,4 +295,16 @@ CREATE POLICY operators_read_own ON public.operators
 --  2026-09-16  RLS 与授权收紧
 --      确认 anon 在所有业务表上零权限；撤掉 authenticated 的 TRUNCATE / REFERENCES；
 --      新增 notifications 表 + operators 表及其策略。
+--
+--  2026-10-03  migration 003_projects（GitHub 项目收藏：运营方独占 + 云端存储）
+--      需求：「把这个 GitHub 项目上传功能改成管理员独占，且数据保存到服务器而非本地。」
+--      改动前：模块数据全在 localStorage（fluxdesk_projects_v1:<userId>），
+--              任何登录用户都看得见、都能录；换设备就丢，且是多份互不相干的副本。
+--      改动后：public.projects（1.5）+ projects_operator_all（4.5）。
+--      三个容易踩的点，已写进迁移文件：
+--        (a) 独占靠**策略**不靠前端隐藏 —— 非运营方即使手搓 REST 请求也拿不到行；
+--        (b) id 是前端生成的 text，Excel 批量导入才能幂等（重导同一份 = 覆盖）；
+--        (c) ★ 新表要**自己** REVOKE 一次 TRUNCATE / REFERENCES / TRIGGER ——
+--            001 里那句 `ON ALL TABLES` 只覆盖它执行时已存在的表。
+--            实测线上 anon 在 projects 上权限为 0、authenticated 恰好四项 DML。
 -- =============================================================================

@@ -4,6 +4,15 @@
 .pr-heading small{color:var(--gold2);letter-spacing:1.8px;font-size:10px}
 .pr-heading h1{font-size:28px;margin:5px 0}
 .pr-heading p{margin:0;color:var(--dim);font-size:13px}
+/* 云同步状态条：让"数据在服务器上"这件事可见；也是验收探针的等待锚点 */
+.pr-sync{display:inline-flex;align-items:center;gap:6px;margin-top:9px;padding:4px 10px;border:1px solid var(--border2);border-radius:20px;background:var(--panel2);color:var(--dim);font-size:11.5px;white-space:nowrap}
+.pr-sync::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.65;flex:none}
+.pr-sync[data-pr-sync-state="ready"]{color:#4fd39a;border-color:color-mix(in srgb,#4fd39a 34%,var(--border2))}
+.pr-sync[data-pr-sync-state="empty"]{color:var(--dim)}
+.pr-sync[data-pr-sync-state="loading"]{color:var(--gold2);border-color:color-mix(in srgb,var(--gold) 34%,var(--border2))}
+.pr-sync[data-pr-sync-state="loading"]::before{animation:prSyncPulse 1s ease-in-out infinite}
+.pr-sync[data-pr-sync-state="error"]{color:#ff7a8a;border-color:color-mix(in srgb,#ff7a8a 38%,var(--border2))}
+@keyframes prSyncPulse{0%,100%{opacity:.25}50%{opacity:1}}
 .pr-actions{display:flex;gap:8px;flex-wrap:wrap}
 .pr-panel{border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--panel) 92%,transparent);box-shadow:0 14px 38px rgba(3,8,20,.06)}
 .pr-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);border-radius:16px;overflow:hidden;margin-bottom:16px}
@@ -106,5 +115,8 @@ html[data-theme="light"] .pr-owned{color:#11764f}
 html[data-theme="light"] .pr-hot{background:#fff}
 html[data-theme="light"] .pr-hot-card{background:#fff}
 html[data-theme="light"] .pr-hot-grid{background:#eceff4}
+html[data-theme="light"] .pr-sync{background:#f7f9fc}
+html[data-theme="light"] .pr-sync[data-pr-sync-state="ready"]{color:#11764f;border-color:#bfe7d4}
+html[data-theme="light"] .pr-sync[data-pr-sync-state="error"]{color:#c0394f;border-color:#f3c9d1}
 @media(max-width:900px){.pr-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.pr-dlg-body{grid-template-columns:1fr}.pr-hot-grid{grid-template-columns:1fr}}
 @media(max-width:600px){.projects-workspace{padding:20px 12px}.pr-heading{flex-direction:column;align-items:flex-start}.pr-heading h1{font-size:23px}.pr-filters input[type=search]{width:100%}.pr-scroll{max-height:none}}

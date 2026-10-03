@@ -133,4 +133,102 @@ assert.strictEqual(P.hotFresh([{ url: '' , name: '' }], []).length, 0);
 /* ---------- 热点数据源路径必须与 make_app.py 的白名单一致 ---------- */
 assert.strictEqual(P.HOT_URL, '/assets/hot-projects.json');
 
-console.log('projects.js 自检通过：日期 7 · Star 7 · 表头 8 · 列序 2 · 筛选 13 · 边界 2 · 热点 18');
+/* ==========================================================================
+   数据库字段集（2026-10-03 改为云端存储时新增）
+   --------------------------------------------------------------------------
+   这是最需要机器盯着的一段：字段表一旦漂移，症状是"某一列永远存不进去"，
+   而且界面看起来完全正常（因为它只从内存渲染），非要刷新页面才发现。
+   ========================================================================== */
+
+// [1] 字段集必须**恰好**是这 9 个 —— 多了会往库里塞多余列，少了会静默丢字段
+const EXPECT_FIELDS = ['added_at', 'category', 'name', 'note', 'openness',
+  'stars', 'summary', 'updated_at', 'url'];
+assert.deepStrictEqual(
+  Object.keys(P.fieldsOf({})).sort(), EXPECT_FIELDS,
+  'fieldsOf 的字段集与约定不符（改字段必须同步改 migrations/003_projects.sql 的建表）');
+
+// [2] ★ 绝不能有身份列：身份交给列的 DEFAULT auth.uid()。
+//     客户端自报身份既不可信，也会被 RLS 拒绝；历史上还炸过一次
+//     （notifications.created_by 传了 19 位数字串，Postgres 按 uuid 解析失败）。
+const idCols = P.IDENTITY_COLS;
+assert.ok(Array.isArray(idCols) && idCols.length, 'IDENTITY_COLS 必须是数组');
+Object.keys(P.fieldsOf({})).forEach(k => {
+  assert.ok(idCols.indexOf(k) < 0, '字段集里出现了身份列：' + k);
+});
+// 反向确认哨兵列名本身没写错（写错成 ownerId 之类就永远扫不到了）
+['owner_id', 'created_by'].forEach(c => {
+  assert.ok(idCols.indexOf(c) >= 0, 'IDENTITY_COLS 漏了 ' + c + '，哨兵会失效');
+});
+
+// [3] ★★ 漂移守卫：Excel 契约（COLS）里的每一个业务列，数据库字段集里都必须有。
+//     加了一列到 COLS 却忘了 fieldsOf → 导出里有、存库时丢 → 这里必须炸。
+P.COLS.forEach(c => {
+  assert.ok(EXPECT_FIELDS.indexOf(c.k) >= 0,
+    'COLS 里的 ' + c.k + ' 没有对应的数据库字段，导出有值但存不进库');
+});
+// 且 fieldsOf 不该有 COLS 之外凭空多出来的业务列（updated_at 是审计列，豁免）
+Object.keys(P.fieldsOf({})).forEach(k => {
+  if (k === 'updated_at') return;
+  assert.ok(P.COLS.some(c => c.k === k), 'fieldsOf 多出 COLS 之外的业务列：' + k);
+});
+
+// [4] 脏数据的兜底默认值：必须和建表时的 DEFAULT 一致，否则"空值"和"缺字段"会写出两种结果
+const f0 = P.fieldsOf({});
+assert.strictEqual(f0.category, '其他');
+assert.strictEqual(f0.openness, '源码可见');
+assert.strictEqual(f0.stars, 0);
+assert.strictEqual(f0.name, '');
+assert.strictEqual(f0.url, '');
+assert.strictEqual(f0.summary, '');
+assert.strictEqual(f0.note, '');
+assert.strictEqual(f0.added_at, P.today(), '空日期要落到今天，不能写空串（列是 NOT NULL）');
+
+// [5] 类型必须落成数据库能吃的形态
+const f1 = P.fieldsOf({ stars: '74.2k', added_at: '2026/10/3', name: '  a/b  ' }, '2026-10-03T00:00:00.000Z');
+assert.strictEqual(f1.stars, 74200, 'stars 必须转成整数（列是 integer，传字符串会被拒）');
+assert.strictEqual(f1.added_at, '2026-10-03', '日期要规范化成 YYYY-MM-DD');
+assert.strictEqual(f1.name, 'a/b', '字符串字段要 trim');
+assert.strictEqual(f1.updated_at, '2026-10-03T00:00:00.000Z', 'updated_at 应可直接注入以便复现');
+
+// [6] null 不能漏进来 —— 显式 null 会覆盖列的 DEFAULT（平台文档明确警告过）
+const f2 = P.fieldsOf({ name: null, url: undefined, stars: null, category: '', openness: null });
+Object.keys(f2).forEach(k => {
+  assert.notStrictEqual(f2[k], null, k + ' 不该是 null（会覆盖列默认值）');
+  assert.notStrictEqual(f2[k], undefined, k + ' 不该是 undefined');
+});
+
+// [7] ★★ 全局名遮蔽守卫：页面里任何 `id="x"` 都会在 window 上生成同名全局变量 x。
+//     所以 `if (window.foo) window.foo(...)` 这种写法天生不可靠 —— id 一撞名，
+//     window.foo 就是 DOM 元素，调用直接 TypeError；若在 .then 链里，整条链被打断，
+//     表现为「数据写成功了但界面不动」，极难定位。
+//     真实事故：<div class="toast" id="toast"> 撞掉了 global.toast（2026-10-03）。
+//     规则：projects.js 里凡是 `global.X(...)` 的调用，X 都不能是产物里的某个 id。
+const fs = require('fs');
+const path = require('path');
+const src = fs.readFileSync(path.join(__dirname, 'projects.js'), 'utf8');
+const htmlPath = path.join(__dirname, '..', 'index.html');
+if (fs.existsSync(htmlPath)) {
+  const html = fs.readFileSync(htmlPath, 'utf8');
+  const ids = new Set();
+  let m, reId = /\sid="([A-Za-z_$][\w$-]*)"/g;
+  while ((m = reId.exec(html))) ids.add(m[1]);
+  const called = new Set();
+  let reCall = /\bglobal\.([A-Za-z_$][\w$]*)\s*\(/g;
+  while ((m = reCall.exec(src))) called.add(m[1]);
+  const shadowed = [...called].filter(n => ids.has(n));
+  // 允许调用撞名全局，但**必须**先做类型判断（typeof）。只写 `if (global.X)` 是不行的：
+  // X 恒为真（元素存在）却不是函数，照样 TypeError。
+  const unguarded = shadowed.filter(n => src.indexOf('typeof global.' + n) < 0);
+  assert.strictEqual(unguarded.length, 0,
+    '这些名字既是页面元素 id 又被当全局函数调用，且没有 typeof 判断：' + unguarded.join(', ') +
+    ' —— 会拿到 DOM 元素去调用；换成 typeof 判断 + 不撞名的出口（如 window.FluxToast）');
+  assert.ok(called.size >= 2, '全局调用点扫描结果为空，说明正则失效了（不是真通过）');
+  // 顺带禁掉最危险的那个写法：对撞名全局做真值判断后调用
+  const truthyOnShadowed = shadowed.filter(n => new RegExp('if\\s*\\(\\s*global\\.' + n + '\\s*\\)').test(src));
+  assert.strictEqual(truthyOnShadowed.length, 0,
+    '对撞名全局写了 `if (global.X)`（X 恒真但不是函数）：' + truthyOnShadowed.join(', '));
+  // 反向确认：守卫的样本还在（改了 id 就会让这条守卫悄悄失效）
+  assert.ok(ids.has('toast'), '产物里找不到 id="toast"，守卫样本没了，检查是否改了 id');
+}
+
+console.log('projects.js 自检通过：日期 7 · Star 7 · 表头 8 · 列序 2 · 筛选 13 · 边界 2 · 热点 18 · 库字段 6 · 全局遮蔽 1');

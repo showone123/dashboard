@@ -72,7 +72,8 @@
       "access_grants",
       "datasets",
       "notifications",
-      "operators"
+      "operators",
+      "projects"
     ],
     "db_policies": [
       "datasets_delete_own",
@@ -86,13 +87,15 @@
       "grants_update_own_heartbeat",
       "notifications_operator_write",
       "notifications_read",
-      "operators_read_own"
+      "operators_read_own",
+      "projects_operator_all"
     ],
     "db_identity_columns_are_text": [
       "access_grants.owner_id",
       "datasets.owner_id",
       "notifications.created_by",
-      "operators.owner_id"
+      "operators.owner_id",
+      "projects.owner_id"
     ],
     "grant_status_values": [
       "pending",

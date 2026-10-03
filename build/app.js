@@ -664,13 +664,26 @@
     hide('viewAuth'); show('viewGate');
   }
 
+  /* 营运方独占的导航入口统一在这里收口。
+     ⚠️ 这只是**体验**上的隐藏 —— 真正的门在数据库：运营台受 access_grants 的策略保护，
+     GitHub 项目收藏整张表由 projects_operator_all 收死（见 migrations/003_projects.sql）。
+     前端藏不藏不影响安全，但一定要藏，否则普通用户会点进一个必然报错的页面。 */
+  function applyOperatorNav() {
+    ['tabAdmin', 'tabProjects'].forEach(function (id) {
+      var b = $(id);
+      if (b) b.classList.toggle('hidden', !S.isOperator);
+    });
+    // 身份可能中途变化（退出登录 / 被移出名单）——正停在独占页上就退回总览
+    if (!S.isOperator && (curTab === 'admin' || curTab === 'projects')) switchTab('dash');
+  }
+
   async function refreshOperator() {
-    if (!S.userId) { S.isOperator = false; return; }
+    if (!S.userId) { S.isOperator = false; applyOperatorNav(); return S.isOperator; }
     try {
       var op = await cloud.database.from('operators').select('owner_id').eq('owner_id', S.userId).limit(1);
       S.isOperator = !!(op.data && op.data.length);
     } catch (e) { S.isOperator = false; }
-    $('tabAdmin').classList.toggle('hidden', !S.isOperator);
+    applyOperatorNav();
     return S.isOperator;
   }
 
@@ -746,7 +759,7 @@
     if ($('sidePlan')) $('sidePlan').textContent = chip.textContent;
 
     // 运营方标签可见性（身份已在 checkAccess 里判定）
-    $('tabAdmin').classList.toggle('hidden', !S.isOperator);
+    applyOperatorNav();
 
     await loadDatasets();
     if (!S.data) setData(SEED, '示例数据（铜 · 2026-09-15）');
@@ -853,6 +866,13 @@
   var curTab = '';
 
   function switchTab(name) {
+    // 运营方独占页的兜底闸门：导航项对非运营方已隐藏，这里再挡一次，
+    // 防的是有人直接调 switchTab('projects') 或深链进来 —— 界面不该出现必然报错的页面。
+    // 真正的权限仍在数据库（projects 表的 RLS），这里只是别让用户白跑一趟。
+    if (name === 'projects' && !S.isOperator) {
+      toast('err', 'GitHub 项目收藏仅管理员可用');
+      name = 'dash';
+    }
     closeNotifs();
     var was = curTab;
     curTab = name;
@@ -2272,6 +2292,14 @@
   /* 本地渲染脚本的入口（见 _verify/run_admin_render.py）。
      只在 IIFE 作用域上挂一个引用，不给线上任何额外能力 —— 它只是一次纯函数调用。*/
   window.renderOperatorWith = renderOperatorWith;
+
+  /* 统一 toast 出口：给内嵌模块（如 projects.js）复用页面自己的提示条。
+     ⚠️ 必须挂在 FluxToast 这个名字上，**不能叫 window.toast** ——
+        页面里有个 `<div class="toast" id="toast">`，浏览器会把 id 自动挂成同名全局变量，
+        window.toast 因此是个 DOM 元素。谁写 `if (window.toast) window.toast(...)`
+        都会拿到元素去当函数调用 → TypeError；若这行在 .then 链里，整条链会被打断。
+        （2026-10-03：projects.js 搬迁后界面空白，根因就是这个。） */
+  window.FluxToast = toast;
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();

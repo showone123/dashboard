@@ -1,11 +1,21 @@
 /* ==========================================================================
-   GitHub 项目收藏（Project Library）
+   GitHub 项目收藏（Project Library）—— 运营方独占 · 云端存储
    ---------------------------------------------------------------------------
-   把从 GitHub 上收集到的优质项目建档、分类、筛选、导出。
+   把从 GitHub 上收集到的项目建档、分类、筛选、导出。
    Excel 读写复用页面已引入的 SheetJS（XLSX），不新增依赖。
+
+   ★ 数据存在云数据库 public.projects，不在 localStorage。
+     版本历史：2026-10-03 之前是纯 localStorage（fluxdesk_projects_v1:<userId>），
+     换设备就丢、且每个用户各存一份。现改为服务端存储，老数据会**一次性自动搬迁**
+     （见 migrateLocal()）。
+   ★ 权限：整张表由 migrations/003_projects.sql 的 projects_operator_all 策略收死成
+     「仅 operators 名单内可读写」。前端把导航项藏起来只是体验，真正的门在 RLS ——
+     非运营方手工构造 REST 请求也只会拿到 0 行。
 
    对外接口：window.ProjectsDesk.open(node, userId) / .close()
    数据契约（也是 Excel 模板的表头顺序）见 COLS —— 改这里等于改模板契约。
+   改字段集必须同步改三处：本文件 COLS、migrations/003_projects.sql 的建表、
+   check_projects.js 的断言。
    ========================================================================== */
 (function (global) {
   'use strict';
@@ -103,8 +113,34 @@
     return true;
   }
 
+  /* ---------- 数据库字段集（单一事实来源） ----------
+     ★ 插入与更新都走这一个函数，绝不在调用处另写一份字段表 ——
+       字段表抄两遍必然漂移，而漂移的后果是"某一列永远存不进去"。
+     ★ 这里**永远不能出现身份列**（owner_id / created_by）：
+       身份交给列的 DEFAULT auth.uid()，客户端自报身份既不可信也会被 RLS 拒。
+       同理 update 里也不放 created_at。
+     ★ 也不要传 null 去"触发默认值" —— 显式 null 会覆盖 DEFAULT，反而被 RLS 拒。
+       （平台文档明确写了这条，见 cloud-service/references/database/code-generation.md）
+     check_projects.js 会断言本函数的键集：既不含身份列，也不缺业务列。 */
+  var IDENTITY_COLS = ['owner_id', 'created_by', 'user_id'];
+
+  function fieldsOf(it, now) {
+    return {
+      added_at: toDate(it && it.added_at) || today(),
+      name: String((it && it.name) || '').trim(),
+      url: String((it && it.url) || '').trim(),
+      category: String((it && it.category) || '').trim() || '其他',
+      summary: String((it && it.summary) || '').trim(),
+      openness: String((it && it.openness) || '').trim() || '源码可见',
+      stars: toStars(it && it.stars),
+      note: String((it && it.note) || '').trim(),
+      updated_at: now || new Date().toISOString()
+    };
+  }
+
   var PURE = { COLS: COLS, toDate: toDate, toStars: toStars, rowFromExcel: rowFromExcel,
-    rowToArray: rowToArray, matchItem: matchItem, today: today };
+    rowToArray: rowToArray, matchItem: matchItem, today: today,
+    fieldsOf: fieldsOf, IDENTITY_COLS: IDENTITY_COLS };
 
   /* ---------- 热点推荐（服务端数据源 → 可一键收进个人库） ----------
      数据由 build/refresh_hot.py 每晚生成，作为静态资源放在 /assets/hot-projects.json。
@@ -182,18 +218,116 @@
       .replace(/"/g, '&quot;');
   }
   function uid() { return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
-  function storeKey() { return 'fluxdesk_projects_v1:' + (user || 'anon'); }
 
-  /* ---------- 持久化 ---------- */
+  /* ---------- 持久化：云数据库 public.projects（运营方独占） ----------
+     权限边界见 migrations/003_projects.sql 的 projects_operator_all：
+     读 / 增 / 改 / 删四个动作全部要求 auth.uid() 出现在 operators 名单里。
+     ⇒ 这里**不需要**自己 .eq('owner_id', ...)，RLS 已经把别人的行过滤掉了。
+
+     ★ 关键陷阱：RLS 的拒绝是**静默**的 —— 不报错、只返回空行集。
+       所以每个写操作之后都必须显式检查返回行数，否则"被拦下"会被当成"成功"，
+       用户看到"已入库"但刷新后什么都没了。（平台文档原话：
+       "An empty result array means RLS blocked the write — not that it succeeded."） */
+
+  var TABLE = 'projects';
+  var LS_KEY = 'fluxdesk_projects_v1:';           // 旧版本地键，仅用于一次性搬迁
+  var MIG_KEY = 'fluxdesk_projects_migrated_v1';  // 搬迁完成标记
+  var loadErr = '';                               // 读取失败原因，渲染成顶部红条
+
+  function api() {
+    return (global.cloud && global.cloud.database) ? global.cloud.database : null;
+  }
+
+  // SDK 报错 → 能照着做的中文（不要把 traceback 甩给用户）
+  function dbErr(e) {
+    var m = (e && e.message) ? String(e.message) : String(e || '未知错误');
+    if (/42501|permission denied|row-level security/i.test(m)) return '没有权限：该功能仅管理员可用';
+    if (/401|not authenticated|jwt|token/i.test(m)) return '登录已过期，请刷新页面重新登录';
+    if (/failed to fetch|network|load failed/i.test(m)) return '网络不通，请检查网络后重试';
+    return m;
+  }
+
+  // 写操作的统一收口：把"静默被拒"变成显式错误
+  function assertWrote(r, what) {
+    if (r && r.error) throw r.error;
+    var n = (r && Array.isArray(r.data)) ? r.data.length : 0;
+    if (!n) throw new Error(what + '未生效（没有权限，或记录已被删除）');
+    return r.data;
+  }
+
   function load() {
+    var a = api();
+    if (!a) { loadErr = '云服务未就绪'; return Promise.resolve(); }
+    return a.from(TABLE).select('*').order('added_at', { ascending: false }).limit(1000)
+      .then(function (r) {
+        if (r.error) throw r.error;
+        items = (r.data || []).map(normalize);
+        loadErr = '';
+      })
+      .catch(function (e) { items = []; loadErr = dbErr(e); });
+  }
+
+  function insertRows(rows) {
+    var a = api();
+    if (!a) return Promise.reject(new Error('云服务未就绪'));
+    var now = new Date().toISOString();
+    // 用 map 逐行套 fieldsOf()，而不是在这里再写一份字段表（见 fieldsOf 的注释）
+    return a.from(TABLE).insert(rows.map(function (it) {
+      var o = fieldsOf(it, now);
+      o.id = it.id;      // id 由前端生成，作为主键（也是 Excel 重复导入时的 upsert 锚点）
+      return o;
+    })).select();
+  }
+
+  function updateRow(id, it) {
+    var a = api();
+    if (!a) return Promise.reject(new Error('云服务未就绪'));
+    return a.from(TABLE).update(fieldsOf(it)).eq('id', id).select();
+  }
+
+  // Excel 重复导入时用 upsert：主键就是前端 id，所以"同一份表再导一次"是个幂等覆盖，
+  // 而不是每导一次多一批重复行。一次请求写完，不逐行打圈。
+  function upsertRows(rows) {
+    var a = api();
+    if (!a) return Promise.reject(new Error('云服务未就绪'));
+    var now = new Date().toISOString();
+    return a.from(TABLE).upsert(rows.map(function (it) {
+      var o = fieldsOf(it, now);
+      o.id = it.id;
+      return o;
+    })).select();
+  }
+
+  function deleteRow(id) {
+    var a = api();
+    if (!a) return Promise.reject(new Error('云服务未就绪'));
+    return a.from(TABLE).delete().eq('id', id).select();
+  }
+
+  // 一次性搬迁：把旧版本的 localStorage 数据搬进云库。
+  // 只在「没搬过 + 本地确实有数据」时动手；云库已有数据时不搬（由 open() 判断），
+  // 避免把本地那份陈旧副本盖到云端。搬失败不打扰用户，下次再说。
+  function migrateLocal() {
+    var a = api();
+    if (!a) return Promise.resolve(0);
+    var raw = null;
     try {
-      var v = JSON.parse(localStorage.getItem(storeKey()));
-      items = Array.isArray(v) ? v.map(normalize) : [];
-    } catch (e) { items = []; }
+      if (localStorage.getItem(MIG_KEY)) return Promise.resolve(0);
+      raw = localStorage.getItem(LS_KEY + (user || 'anon'));
+    } catch (e) { return Promise.resolve(0); }
+    var rows = null;
+    try { rows = JSON.parse(raw); } catch (e) { rows = null; }
+    if (!Array.isArray(rows) || !rows.length) {
+      try { localStorage.setItem(MIG_KEY, '1'); } catch (e) {}
+      return Promise.resolve(0);
+    }
+    return insertRows(rows.map(normalize)).then(function (r) {
+      var data = assertWrote(r, '搬迁本地数据');
+      try { localStorage.setItem(MIG_KEY, '1'); } catch (e) {}
+      return data.length;
+    }).catch(function () { return 0; });
   }
-  function save() {
-    try { localStorage.setItem(storeKey(), JSON.stringify(items)); } catch (e) { /* 配额满就只留内存态 */ }
-  }
+
   function normalize(it) {
     var o = { id: it && it.id ? String(it.id) : uid() };
     COLS.forEach(function (c) {
@@ -349,24 +483,35 @@
     box.innerHTML = head + body;
   }
 
-  // 收进：按 depKey 去重（与 Excel 导入同一口径），已存在则跳过
+  // 收进：按 depKey 去重（与 Excel 导入同一口径），已存在则跳过。
+  // 云端写入 —— 先写成功再刷新本地，不做乐观更新（这个模块写入频率低，
+  // 省掉"回滚"那套状态机，代价只是几百毫秒的等待，换来的是界面永远不会骗人）。
   function adopt(list) {
-    var add = 0, skip = 0;
     var owned = {};
     items.forEach(function (it) { owned[depKey(it)] = 1; });
+    var fresh = [], skip = 0;
     list.forEach(function (h) {
-      var row = hotToRow(h);
+      var row = normalize(hotToRow(h));
       var k = depKey(row);
       if (!k || owned[k]) { skip++; return; }
       owned[k] = 1;
-      items.push(normalize(row));
-      add++;
+      fresh.push(row);
     });
-    if (add) save();
-    render(); renderHot();
-    toast(add
-      ? ('已收进 ' + add + ' 个' + (skip ? '，跳过 ' + skip + ' 个已在库的' : '') + '。')
-      : '这些都已经在个人库里了。');
+    if (!fresh.length) { toast('这些都已经在你的库里了。'); return; }
+
+    setSync('loading', '正在写入云端…');
+    insertRows(fresh).then(function (r) {
+      assertWrote(r, '收进我的库');
+      return load();
+    }).then(function () {
+      if (loadErr) throw new Error(loadErr);
+      setSync('ready', '已同步到云端 · ' + items.length + ' 个项目');
+      render(); renderHot();
+      toast('已收进 ' + fresh.length + ' 个' + (skip ? '，跳过 ' + skip + ' 个已在库的' : '') + '。');
+    }).catch(function (e) {
+      setSync('error', '写入失败');
+      toast('收进失败：' + dbErr(e));
+    });
   }
 
   function fetchHot() {
@@ -420,15 +565,29 @@
       stars: toStars($('[data-pr-f-stars]').value),
       note: $('[data-pr-f-note]').value.trim()
     };
-    if (editingId) {
-      items = items.map(function (x) {
-        return x.id === editingId ? normalize(Object.assign({}, x, patch, { id: editingId })) : x;
-      });
-    } else {
-      items.push(normalize(Object.assign({ id: uid() }, patch)));
-    }
-    save(); render(); closeEditor();
-    toast(editingId ? '已更新。' : '已入库。');
+    var editing = editingId;
+    var row = normalize(Object.assign({ id: editing || uid() }, patch));
+    var btn = $('[data-pr-save]');
+    if (btn) btn.disabled = true;
+    setSync('loading', editing ? '正在保存…' : '正在入库…');
+
+    (editing ? updateRow(editing, row) : insertRows([row]))
+      .then(function (r) {
+        assertWrote(r, editing ? '保存' : '入库');
+        return load();
+      })
+      .then(function () {
+        if (loadErr) throw new Error(loadErr);
+        closeEditor();
+        syncReady();
+        render();
+        toast(editing ? '已更新。' : '已入库。');
+      })
+      .catch(function (e) {
+        setSync('error', '写入失败');
+        toast('保存失败：' + dbErr(e));
+      })
+      .then(function () { if (btn) btn.disabled = false; });
   }
 
   function closeEditor() {
@@ -441,14 +600,50 @@
     var it = items.filter(function (x) { return x.id === id; })[0];
     if (!it) return;
     if (!global.confirm('删除「' + (it.name || it.url) + '」？此操作不可撤销。')) return;
-    items = items.filter(function (x) { return x.id !== id; });
-    save(); render(); toast('已删除。');
+    setSync('loading', '正在删除…');
+    deleteRow(id).then(function (r) {
+      assertWrote(r, '删除');
+      return load();
+    }).then(function () {
+      if (loadErr) throw new Error(loadErr);
+      syncReady(); render();
+      toast('已删除。');
+    }).catch(function (e) {
+      setSync('error', '删除失败');
+      toast('删除失败：' + dbErr(e));
+    });
+  }
+
+  /* ---------- 同步状态条 ----------
+     让"数据在云端"这件事在界面上可见：读写中 / 已同步 / 失败。
+     同时它也是**验收锚点** —— 探针靠 [data-pr-sync-state] 等异步落定，
+     固定 sleep 会读到中间态（本项目在热点推荐上已经吃过一次假红）。 */
+  function setSync(state, text) {
+    var el = $('[data-pr-sync]');
+    if (!el) return;
+    el.setAttribute('data-pr-sync-state', state);
+    el.textContent = text;
+    el.className = 'pr-sync ' + state;
+  }
+
+  function syncReady() {
+    setSync(items.length ? 'ready' : 'empty',
+      items.length ? ('已同步到云端 · ' + items.length + ' 个项目') : '云端暂无数据，新增即自动保存');
   }
 
   function toast(text) {
-    if (global.FluxToast) { global.FluxToast(text); return; }
-    if (global.toast) { global.toast('info', text); return; }
+    /* ★★ 必须用 `typeof ... === 'function'` 判，不能写成 `if (global.X)`：
+       页面里存在 `<div class="toast" id="toast">`，浏览器会把带 id 的元素自动挂成
+       同名全局变量 ⇒ `global.toast` 恒为真，但它是个 **DOM 元素不是函数**，
+       调用即 "global.toast is not a function"。
+       而这个 toast 大量出现在 .then 链里，一抛就把整条链打断 ——
+       症状极具迷惑性：**数据其实已经写进服务端了，界面却停在旧状态**
+       （2026-10-03 实测：?fresh=1 搬迁成功 14 条，界面仍是"项目库还是空的"）。
+       所以：① 类型判；② 优先用 app.js 暴露的 window.FluxToast（样式统一）。 */
+    if (typeof global.FluxToast === 'function') { global.FluxToast(text); return; }
+    if (typeof global.toast === 'function') { global.toast('info', text); return; }
     var el = $('[data-pr-toast]');
+    if (!el) return;                      // 兜底路径也不能因为缺元素就抛
     el.textContent = text;
     el.classList.add('on');
     clearTimeout(toast.t);
@@ -528,7 +723,7 @@
       var rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '', raw: true });
       if (!rows.length) { toast('没有读到数据行（第一行需要是表头）。'); return; }
 
-      var added = 0, updated = 0, skipped = 0;
+      var toInsert = [], toUpdate = [], skipped = 0;
       var index = {};
       items.forEach(function (it) { index[(it.url || it.name).toLowerCase()] = it; });
 
@@ -538,15 +733,43 @@
         if (!key || key === '示例行') { skipped++; return; }
         if (!it.added_at) it.added_at = today();
         var hit = index[key];
-        if (hit) { Object.assign(hit, it, { id: hit.id }); updated++; }
-        else { var fresh = normalize(it); items.push(fresh); index[key] = fresh; added++; }
+        if (hit) {
+          // 已存在：沿用原 id（upsert 的锚点）与原有备注；缺字段的用新值补
+          var merged = normalize(Object.assign({}, hit, it, { id: hit.id }));
+          index[key] = merged;
+          toUpdate.push(merged);
+        } else {
+          var fresh = normalize(it);
+          index[key] = fresh;
+          toInsert.push(fresh);
+        }
       });
 
-      save(); render(); resetFilterInputs();
-      var msg = '导入完成：新增 ' + added + ' 条';
-      if (updated) msg += '，更新 ' + updated + ' 条';
-      if (skipped) msg += '，跳过 ' + skipped + ' 行空行/标题行';
-      toast(msg + '。');
+      if (!toInsert.length && !toUpdate.length) { toast('没有读到可导入的数据行。'); return; }
+
+      setSync('loading', '正在写入云端…');
+      var chain = Promise.resolve();
+      if (toInsert.length) {
+        chain = chain.then(function () { return insertRows(toInsert); })
+                     .then(function (r) { assertWrote(r, '导入'); });
+      }
+      if (toUpdate.length) {
+        chain = chain.then(function () { return upsertRows(toUpdate); })
+                     .then(function (r) { assertWrote(r, '导入更新'); });
+      }
+      chain.then(function () { return load(); })
+        .then(function () {
+          if (loadErr) throw new Error(loadErr);
+          syncReady(); render(); resetFilterInputs();
+          var msg = '导入完成：新增 ' + toInsert.length + ' 条';
+          if (toUpdate.length) msg += '，更新 ' + toUpdate.length + ' 条';
+          if (skipped) msg += '，跳过 ' + skipped + ' 行空行/标题行';
+          toast(msg + '。');
+        })
+        .catch(function (e) {
+          setSync('error', '导入失败');
+          toast('导入失败：' + dbErr(e));
+        });
     };
     reader.onerror = function () { toast('文件读取失败，重试一次。'); };
     reader.readAsArrayBuffer(file);
@@ -582,8 +805,10 @@
   function skeleton() {
     return ''
       + '<div class="pr-heading">'
-      + '<div><small>GITHUB PROJECT LIBRARY</small><h1>GitHub 项目收藏</h1>'
-      + '<p>把收集到的开源项目建档、归类、筛选，随时导出成 Excel 归档或带走。</p></div>'
+      + '<div><small>GITHUB PROJECT LIBRARY · 仅管理员</small><h1>GitHub 项目收藏</h1>'
+      + '<p>把收集到的开源项目建档、归类、筛选，随时导出成 Excel 归档或带走。'
+      + '数据保存在云端，换设备打开也在。</p>'
+      + '<div class="pr-sync" data-pr-sync data-pr-sync-state="loading">正在从云端读取…</div></div>'
       + '<div class="pr-actions">'
       + '<button class="btn primary" type="button" data-pr-new>新增项目</button>'
       + '<button class="btn" type="button" data-pr-tpl>下载模板</button>'
@@ -611,7 +836,7 @@
       + '</tr></thead><tbody data-pr-body></tbody></table></div>'
       + '</div>'
       + '<p class="pr-note" data-pr-count></p>'
-      + '<p class="pr-note">数据保存在本机浏览器，来源是手工录入或 Excel 导入。换设备时用「导出 Excel」再「导入 Excel」即可迁移。</p>'
+      + '<p class="pr-note">数据保存在服务端（仅管理员可见），来源是手工录入或 Excel 导入。换设备或换浏览器登录，看到的是同一份库。</p>'
       + '<div class="pr-note" data-pr-toast style="position:fixed;left:50%;bottom:28px;transform:translateX(-50%);padding:10px 18px;border:1px solid var(--border2);border-radius:10px;background:var(--panel2);color:var(--text);opacity:0;pointer-events:none;transition:opacity .2s"></div>'
       + '<dialog class="pr-dialog" data-pr-dialog>'
       + '<div class="pr-dlg-head"><h2 data-pr-dlg-title>新增项目</h2>'
@@ -686,11 +911,28 @@
     active = true;
     root.innerHTML = skeleton();
     resetFilterInputs();
-    load();
-    render();
+    items = [];
+    hot = null;        // 每次重开都重新拉热点（榜单每天变），热点自身有模块内缓存
+    loadErr = '';
+    setSync('loading', '正在从云端读取…');
+    render();          // 先铺骨架与空态，别让用户对着白屏等
     renderHot();
-    // 热点只在首次拉取（hot===null 表示还没结果）；模块内已缓存，重开不重复请求
-    if (hot === null) fetchHot();
+    fetchHot();
+
+    load().then(function () {
+      // 只有云端为空时才考虑搬迁本地旧数据 —— 免得把一份陈旧副本盖到云端
+      if (items.length) return 0;
+      return migrateLocal();
+    }).then(function (moved) {
+      if (!moved) return;
+      return load().then(function () {
+        toast('已把本地保存的 ' + moved + ' 个项目搬迁到云端。');
+      });
+    }).then(function () {
+      if (loadErr) setSync('error', loadErr); else syncReady();
+      render();
+    });
+
     root.addEventListener('click', onClick);
     root.addEventListener('input', onFilter);
     root.addEventListener('change', onChange);

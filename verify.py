@@ -130,12 +130,13 @@ def extract_js_array(src, varname):
 
 
 def find_insert_objects(src):
-    """找出所有 .insert({ ... }) 的顶层键名，返回 [(行号, [键名...])]。
+    """找出所有 .insert({ ... }) / .upsert({ ... }) 的顶层键名，返回 [(行号, [键名...])]。
 
     需要正确跨大括号匹配：datasets 那条 insert 是多行的。
+    ⚠️ 键名允许带引号 —— 否则 `"owner_id": x` 这种写法能绕过哨兵。
     """
     out = []
-    for m in re.finditer(r"\.insert\(\s*\{", src):
+    for m in re.finditer(r"\.(?:insert|upsert)\(\s*\{", src):
         start = src.index("{", m.start())
         depth, i = 0, start
         while i < len(src):
@@ -164,7 +165,7 @@ def find_insert_objects(src):
         keys.append(buf)
         names = []
         for kv in keys:
-            km = re.match(r"\s*([A-Za-z_$][\w$]*)\s*:", kv)
+            km = re.match(r"\s*[\"']?([A-Za-z_$][\w$]*)[\"']?\s*:", kv)
             if km:
                 names.append(km.group(1))
         out.append((line, names))
@@ -360,26 +361,64 @@ def check_contract():
             ok("风险日志必填表头契约一致")
 
     # ---- 6.2 身份列禁令（线上事故回归哨兵）----
+    # ⚠️ 哨兵是**结构化**的：只解析 .insert/.upsert 紧跟着的对象字面量，不做全文搜字符串。
+    #    因为 build/projects.js 里的 IDENTITY_COLS 数组本身就含有
+    #    'owner_id' / 'created_by' 这两个字面量，全文搜必然假红。
+    # ⚠️ 结构化扫描有个盲区：字段集若是函数拼出来的（projects.js 的 insertRows/upsertRows
+    #    调 fieldsOf()），就扫不到任何字面量。那一侧的守卫交给
+    #    `node build/check_projects.js` 的「库字段 6 条」——它断言 fieldsOf 的键集
+    #    既不含身份列、又与 COLS 一一对应。两道互补，缺一不可。
+    # 后面 6.3/6.4 还要用 app.js 的源码，这里先取出来复用（别在循环里改名把它丢了）
     appjs = rd("build", "app.js")
-    if appjs is None:
-        bad("缺少 build/app.js")
-    else:
-        inserts = find_insert_objects(appjs)
+    for fname in ("app.js", "projects.js"):
+        fsrc = appjs if fname == "app.js" else rd("build", fname)
+        if fsrc is None:
+            bad("缺少 build/" + fname)
+            continue
+        inserts = find_insert_objects(fsrc)
         if not inserts:
-            bad("app.js 里找不到任何 .insert(...) —— 契约无法校验")
-        else:
-            info("扫到 %d 处 insert：%s" % (
-                len(inserts), "；".join("#L%d [%s]" % (ln, ",".join(ks)) for ln, ks in inserts)))
-            offenders = []
-            for ln, keys in inserts:
-                for f in fc["forbidden_insert_columns"]:
-                    if f in keys:
-                        offenders.append("L%d 的 insert 里出现了 %s" % (ln, f))
-            if offenders:
-                bad("客户端 insert 携带了身份列（会造成线上 invalid input syntax 事故）",
-                    "\n".join(offenders) + "\n身份必须交给列默认值 auth.uid() 生成，客户端不要传。")
+            if fname == "app.js":
+                bad("app.js 里找不到任何 .insert(...) —— 契约无法校验")
             else:
-                ok("insert 字段集干净（不含 %s）" % "、".join(fc["forbidden_insert_columns"]))
+                info("%s 里没有字面量 insert（字段由 fieldsOf() 拼装，"
+                     "身份列守卫见 check_projects.js 的「库字段」断言）" % fname)
+            continue
+        info("%s 扫到 %d 处 insert：%s" % (
+            fname, len(inserts),
+            "；".join("#L%d [%s]" % (ln, ",".join(ks)) for ln, ks in inserts)))
+        offenders = []
+        for ln, keys in inserts:
+            for f in fc["forbidden_insert_columns"]:
+                if f in keys:
+                    offenders.append("%s L%d 的 insert 里出现了 %s" % (fname, ln, f))
+        if offenders:
+            bad("客户端 insert 携带了身份列（会造成线上 invalid input syntax 事故）",
+                "\n".join(offenders) + "\n身份必须交给列默认值 auth.uid() 生成，客户端不要传。")
+        else:
+            ok("%s 的 insert 字段集干净（不含 %s）" % (fname, "、".join(fc["forbidden_insert_columns"])))
+
+    # ---- 6.2b 存储层确实在云端（需求「数据保存到服务器而非本地」的回归哨兵）----
+    # 防的是这条需求静默回退：有人把 load/save 改回 localStorage，功能照跑、测试照绿，
+    # 但数据又变回"只在这台机器上"。这里从源码形态上把它钉住。
+    projs = rd("build", "projects.js")
+    if projs is None:
+        bad("缺少 build/projects.js")
+    else:
+        m = re.search(r"var\s+TABLE\s*=\s*['\"](\w+)['\"]", projs)
+        if m and m.group(1) in fc["db_tables"]:
+            ok("projects.js 的数据表 %s 在契约 db_tables 内" % m.group(1))
+        else:
+            bad("projects.js 的数据表不在契约 db_tables 内",
+                "源码取到：%s\n契约：%s" % (m.group(1) if m else "（没找到 TABLE 常量）",
+                                        ", ".join(fc["db_tables"])))
+        cloud_calls = re.findall(r"\.from\(\s*TABLE\s*\)", projs)
+        ls_full = re.findall(r"localStorage\.setItem\(\s*LS_KEY", projs)
+        if len(cloud_calls) >= 5 and not ls_full:
+            ok("projects.js 读写全走云表（%d 处），无本地全量写入" % len(cloud_calls))
+        else:
+            bad("projects.js 的存储层不在云端，「数据保存到服务器」这条需求未生效",
+                "云表调用 %d 处（期望 ≥5）；对 LS_KEY 的全量写入 %d 处（期望 0）"
+                % (len(cloud_calls), len(ls_full)))
 
         # ---- 6.3 限额与键名 ----
         m = re.search(r"var\s+MAX_UPLOAD\s*=\s*([^;]+);", appjs)

@@ -116,7 +116,10 @@ __APPCSS__
       <button class="app-tab nav-child" data-tab="history" title="数据看板历史" type="button"><span class="nav-glyph">▤</span><span class="nav-text">历史数据</span></button>
       <button class="app-tab" data-tab="futures" title="期货工具箱" type="button"><span class="nav-glyph">▥</span><span class="nav-text">期货工具箱</span></button>
       <button class="app-tab" data-tab="stocks" title="股票工作台" type="button"><span class="nav-glyph">▥</span><span class="nav-text">股票工作台</span></button>
-      <button class="app-tab" data-tab="projects" title="GitHub 项目收藏" type="button"><span class="nav-glyph">▨</span><span class="nav-text">GitHub 项目收藏</span></button>
+      <!-- ⚠️ GitHub 项目收藏是**运营方独占**（数据在 RLS 收死的 public.projects 上）。
+           初始带 hidden，由 app.js 的 applyOperatorNav() 在判定身份后决定是否显示。
+           改 id 要同步改 app.js 的 applyOperatorNav()。 -->
+      <button class="app-tab hidden" data-tab="projects" title="GitHub 项目收藏" id="tabProjects" type="button"><span class="nav-glyph">▨</span><span class="nav-text">GitHub 项目收藏</span></button>
     </nav>
     <div class="workspace-nav-label">风险管理</div>
     <nav class="workspace-nav">
