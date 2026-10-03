@@ -578,6 +578,45 @@ def check_dist_sync():
         bad("dist/index.html 与 index.html 不一致 —— 构建脚本没有同步部署产物",
             "重新运行 python verify.py；build/make_app.py 应同时生成两份产物。")
 
+    # ---- 热点推荐数据源：改了源文件忘了构建（或忘了进白名单）会静默发旧数据 ----
+    # 为什么必须查：这个文件是**每晚由脚本重写**的，最容易出现「本地更新了、
+    # dist/ 还是昨天的」。而它只在页面上以「更新于 X」呈现，肉眼很难发现是旧的。
+    src = os.path.join(HERE, "assets", "hot-projects.json")
+    dst = os.path.join(HERE, "dist", "assets", "hot-projects.json")
+    if not os.path.isfile(src):
+        bad("assets/hot-projects.json 不存在 —— 热点推荐会没有数据",
+            "跑 python build/refresh_hot.py 生成。")
+    else:
+        try:
+            feed = json.loads(io.open(src, encoding="utf-8").read())
+        except Exception as e:
+            feed = None
+            bad("assets/hot-projects.json 不是合法 JSON —— 前端会静默显示「没读到」", str(e)[:160])
+        if feed is not None:
+            items = feed.get("items")
+            if not isinstance(feed.get("updated_at"), str) or not feed.get("updated_at"):
+                bad("热点数据缺 updated_at —— 页面上「更新于」会是空的")
+            elif not isinstance(items, list) or not items:
+                bad("热点数据的 items 为空 —— 白跑一次抓取，页面上没有内容")
+            else:
+                need = ("name", "url", "category", "stars", "found_at")
+                broken = [x.get("name") or "?" for x in items
+                          if not isinstance(x, dict) or any(k not in x for k in need)]
+                if broken:
+                    bad("热点数据有 %d 条缺必填字段（%s）—— 收进个人库会落成空行"
+                        % (len(broken), ", ".join(broken[:3])), "必填：" + "/".join(need))
+                else:
+                    ok("热点数据合法（%d 个项目，更新于 %s）"
+                       % (len(items), feed["updated_at"]))
+                if not os.path.isfile(dst):
+                    bad("dist/assets/hot-projects.json 缺失 —— 线上拿不到热点数据",
+                        "检查 build/make_app.py 的 assets 白名单是否包含 hot-projects.json。")
+                elif open(src, "rb").read() == open(dst, "rb").read():
+                    ok("dist/assets/hot-projects.json 与源文件逐字节一致")
+                else:
+                    bad("dist/assets/hot-projects.json 与源文件不一致 —— 线上会是旧数据",
+                        "重新运行 python verify.py 触发重建。")
+
 
 def _load_sync_module():
     """把 github_sync.py 作为模块载入，用于**功能性**校验（而非字符串匹配）。

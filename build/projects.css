@@ -74,5 +74,37 @@ html[data-theme="light"] .pr-stat,html[data-theme="light"] .pr-panel{background:
 .pr-field input,.pr-field select,.pr-field textarea{padding:9px 11px;border:1px solid var(--border);border-radius:9px;background:var(--bg);color:var(--text);font:12.5px var(--sans)}
 .pr-field textarea{resize:vertical;min-height:74px;line-height:1.55}
 .pr-dlg-foot{display:flex;justify-content:flex-end;gap:9px;padding:16px 22px;border-top:1px solid var(--border)}
-@media(max-width:900px){.pr-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.pr-dlg-body{grid-template-columns:1fr}}
+/* ---------- 热点推荐（来自 /assets/hot-projects.json，只读情报） ---------- */
+.pr-hot{margin-bottom:16px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--panel) 92%,transparent);overflow:hidden}
+.pr-hot-head{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:13px 18px}
+.pr-hot-head small{display:block;color:var(--gold2);letter-spacing:1.6px;font-size:9.5px}
+.pr-hot-head b{display:inline-block;margin:3px 8px 0 0;font-size:15px}
+.pr-hot-head em{font-style:normal;color:var(--dim);font-size:11.5px}
+.pr-hot-head u{color:var(--gold2);text-decoration:none;font-weight:700}
+.pr-hot-act{display:flex;gap:8px;align-items:center;flex-shrink:0}
+.pr-hot-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(430px,1fr));gap:1px;background:var(--border);border-top:1px solid var(--border)}
+.pr-hot-card{padding:13px 16px;background:color-mix(in srgb,var(--panel) 92%,transparent)}
+.pr-hot-card.owned{opacity:.6}
+.pr-hot-top{display:flex;align-items:center;justify-content:space-between;gap:9px}
+.pr-hot-top a{color:var(--gold2);font-weight:700;font-size:13px;text-decoration:none;overflow-wrap:anywhere}
+.pr-hot-top a:hover{text-decoration:underline}
+.pr-hot-meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0 3px;color:var(--dim);font-size:11px}
+.pr-hot-meta .pr-stars{text-align:left}
+.pr-hot-sum{margin:4px 0 0;color:var(--text);font-size:12px;line-height:1.55}
+.pr-hot-biz{margin:8px 0 0;padding:7px 10px;border-left:2px solid var(--gold);border-radius:0 7px 7px 0;background:color-mix(in srgb,var(--gold) 8%,transparent);color:var(--text);font-size:11.5px;line-height:1.6}
+.pr-hot-biz b{margin-right:6px;color:var(--gold2);font-size:10.5px;letter-spacing:.5px}
+.pr-hot-foot{margin-top:9px}
+.pr-owned{color:#4fd39a;font-size:11px}
+.pr-hot-empty{padding:16px 18px;color:var(--dim);font-size:12px}
+.pr-hot-more{margin:0;padding:11px 16px;border-top:1px solid var(--border);color:var(--dim);font-size:11.5px}
+.pr-hot-empty code{padding:1px 5px;border-radius:5px;background:var(--bg);color:var(--gold2);font:11px var(--mono)}
+.pr-hot .btn[disabled]{opacity:.45;cursor:not-allowed}
+/* 浅色主题下 --gold 仍是金色（浅色里是 #5875e8，蓝），左侧竖条用 --gold2 保证对比度 */
+html[data-theme="light"] .pr-hot-biz{background:#fdf8ec;border-left-color:#c99a00}
+html[data-theme="light"] .pr-hot-biz b{color:#8a6200}
+html[data-theme="light"] .pr-owned{color:#11764f}
+html[data-theme="light"] .pr-hot{background:#fff}
+html[data-theme="light"] .pr-hot-card{background:#fff}
+html[data-theme="light"] .pr-hot-grid{background:#eceff4}
+@media(max-width:900px){.pr-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.pr-dlg-body{grid-template-columns:1fr}.pr-hot-grid{grid-template-columns:1fr}}
 @media(max-width:600px){.projects-workspace{padding:20px 12px}.pr-heading{flex-direction:column;align-items:flex-start}.pr-heading h1{font-size:23px}.pr-filters input[type=search]{width:100%}.pr-scroll{max-height:none}}

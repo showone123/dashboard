@@ -106,12 +106,74 @@
   var PURE = { COLS: COLS, toDate: toDate, toStars: toStars, rowFromExcel: rowFromExcel,
     rowToArray: rowToArray, matchItem: matchItem, today: today };
 
+  /* ---------- 热点推荐（服务端数据源 → 可一键收进个人库） ----------
+     数据由 build/refresh_hot.py 每晚生成，作为静态资源放在 /assets/hot-projects.json。
+     为什么不直接写进 localStorage：这是**只读的公共情报**，不该每天自动污染个人库；
+     收进与否由人决定（收进后即可编辑/导出/纳入筛选）。
+     —— 静态资源不需要动 server.py，所以 dist/server.py 的字节契约保持不变。 */
+  var HOT_URL = '/assets/hot-projects.json';
+
+  function hotHeat(h) {
+    var w = Number(h && h.stars_week) || 0;
+    var d = Number(h && h.stars_today) || 0;
+    return Math.max(w, d * 7, Number(h && h.heat) || 0);
+  }
+
+  // 热点项 → 库里那套字段（收进时直接用）
+  function hotToRow(h) {
+    return {
+      added_at: toDate(h && h.found_at) || today(),
+      name: String((h && h.name) || '').trim(),
+      url: String((h && h.url) || '').trim(),
+      category: String((h && h.category) || '').trim() || '其他',
+      summary: String((h && h.summary) || '').trim(),
+      openness: String((h && h.openness) || '').trim() || '源码可见',
+      stars: toStars(h && h.stars),
+      note: String((h && h.note) || '热点推荐').trim()
+    };
+  }
+
+  // 「日榜 +556 · 周榜 +3,124 · Shell · 建库 2026-01-02」
+  function hotFacts(h) {
+    var n = function (x) { return Number(x || 0).toLocaleString('zh-CN'); };
+    var bits = [];
+    if (Number(h && h.stars_today) > 0) bits.push('日榜 +' + n(h.stars_today));
+    if (Number(h && h.stars_week) > 0) bits.push('周榜 +' + n(h.stars_week));
+    if (h && h.language) bits.push(String(h.language));
+    if (h && h.created_at) bits.push('建库 ' + h.created_at);
+    return bits.join(' · ');
+  }
+
+  // 去重键：地址优先，其次名称（与 Excel 导入同一口径）
+  function depKey(o) { return String((o && (o.url || o.name)) || '').toLowerCase(); }
+
+  function hotFresh(list, owned) {
+    var seen = {};
+    (owned || []).forEach(function (it) { var k = depKey(it); if (k) seen[k] = 1; });
+    return (list || []).filter(function (h) {
+      var k = depKey(h);
+      // 没有 key 的脏项直接丢：既无法去重，也不该被收进库（与 Excel 导入同一口径）
+      return k && !seen[k];
+    });
+  }
+
+  PURE.HOT_URL = HOT_URL;
+  PURE.hotHeat = hotHeat;
+  PURE.hotToRow = hotToRow;
+  PURE.hotFacts = hotFacts;
+  PURE.hotFresh = hotFresh;
+  PURE.depKey = depKey;
+
   if (typeof module === 'object' && module.exports) { module.exports = PURE; return; }
 
   /* ---------- 运行时状态 ---------- */
   var root = null, user = '', items = [], active = false;
   var f = { q: '', cat: '', open: '', from: '', to: '', minStars: '' };
   var editingId = null;
+  var hot = null, hotErr = '', hotAll = false;   // hot=null 表示还没拉过（成功/失败都会落地）
+  // 默认只铺前 6 张卡：热点全展开会把「我的库」挤到两屏之外，
+  // 而个人库才是这个模块的主视图。想全看就点「展开全部」。
+  var HOT_PREVIEW = 6;
 
   function $(sel) { return root.querySelector(sel); }
   function esc(s) {
@@ -227,6 +289,105 @@
   }
 
   function render() { renderStats(); renderBars(); renderTable(); }
+
+  /* ---------- 热点推荐：渲染 / 收进 ---------- */
+  function renderHot() {
+    var box = root && $('[data-pr-hot]');
+    if (!box) return;
+    /* 对外暴露加载状态：数据是异步来的，验收脚本必须能等到「不是 loading」再断言，
+       否则会在 fetch 落地前读到空区块 —— 那是假红，不是功能坏了。 */
+    if (hot === null) {
+      box.setAttribute('data-pr-hot-state', 'loading');
+      box.innerHTML = '<div class="pr-hot-empty">正在读取热点数据…</div>';
+      return;
+    }
+    var list = hot.items || [];
+    box.setAttribute('data-pr-hot-state', list.length ? 'ready' : (hotErr ? 'error' : 'empty'));
+    if (!list.length) {
+      box.innerHTML = '<div class="pr-hot-empty">'
+        + (hotErr ? '热点数据没读到（' + esc(hotErr) + '）。不影响个人库的使用。'
+                  : '热点数据为空。跑 <code>python build/refresh_hot.py</code> 生成。')
+        + '</div>';
+      return;
+    }
+    var fresh = hotFresh(list, items);
+    var shown = hotAll ? list : list.slice(0, HOT_PREVIEW);
+    var rest = list.length - shown.length;
+    var head = '<div class="pr-hot-head">'
+      + '<div><small>TRENDING ON GITHUB</small><b>热点推荐</b>'
+      + '<em>更新于 ' + esc(hot.updated_at || '—') + ' · 共 ' + list.length + ' 个'
+      + (fresh.length ? ' · 其中 <u>' + fresh.length + '</u> 个尚未收进' : ' · 已全部收进') + '</em></div>'
+      + '<div class="pr-hot-act">'
+      + '<button class="btn sm" type="button" data-pr-adopt-all' + (fresh.length ? '' : ' disabled') + '>'
+      + '全部收进' + (fresh.length ? '（' + fresh.length + '）' : '') + '</button>'
+      + '<button class="pr-rowbtn" type="button" data-pr-hot-toggle>'
+      + (hotAll ? '收起' : '展开全部（' + list.length + '）') + '</button>'
+      + '</div></div>';
+
+    var body = '<div class="pr-hot-grid">' + shown.map(function (h) {
+      var owned = fresh.indexOf(h) < 0;
+      return '<article class="pr-hot-card' + (owned ? ' owned' : '') + '">'
+        + '<div class="pr-hot-top">'
+        + '<a href="' + esc(h.url || '#') + '" target="_blank" rel="noopener noreferrer">'
+        + esc(h.name || '') + '</a>'
+        + '<span class="pr-tag">' + esc(h.category || '其他') + '</span>'
+        + '</div>'
+        + '<div class="pr-hot-meta"><span class="pr-stars">★ ' + num(h.stars) + '</span>'
+        + '<span>' + esc(hotFacts(h)) + '</span>'
+        + '<span class="pr-open ' + (TONE[h.openness] || 'muted') + '">' + esc(h.openness || '') + '</span></div>'
+        + '<p class="pr-hot-sum">' + esc(h.summary || '（无简介）') + '</p>'
+        + (h.biz ? '<p class="pr-hot-biz"><b>商业价值</b>' + esc(h.biz) + '</p>' : '')
+        + '<div class="pr-hot-foot">'
+        + (owned
+          ? '<span class="pr-owned">✓ 已在个人库</span>'
+          : '<button class="pr-rowbtn" type="button" data-pr-adopt="' + (list.indexOf(h)) + '">收进我的库</button>')
+        + '</div></article>';
+    }).join('') + '</div>'
+      + (rest > 0 ? '<p class="pr-hot-more">还有 ' + rest + ' 个未展示 —— 点右上「展开全部（'
+          + list.length + '）」。</p>' : '');
+
+    box.innerHTML = head + body;
+  }
+
+  // 收进：按 depKey 去重（与 Excel 导入同一口径），已存在则跳过
+  function adopt(list) {
+    var add = 0, skip = 0;
+    var owned = {};
+    items.forEach(function (it) { owned[depKey(it)] = 1; });
+    list.forEach(function (h) {
+      var row = hotToRow(h);
+      var k = depKey(row);
+      if (!k || owned[k]) { skip++; return; }
+      owned[k] = 1;
+      items.push(normalize(row));
+      add++;
+    });
+    if (add) save();
+    render(); renderHot();
+    toast(add
+      ? ('已收进 ' + add + ' 个' + (skip ? '，跳过 ' + skip + ' 个已在库的' : '') + '。')
+      : '这些都已经在个人库里了。');
+  }
+
+  function fetchHot() {
+    if (typeof global.fetch !== 'function') { hot = { updated_at: '', items: [] }; hotErr = '浏览器不支持 fetch'; renderHot(); return; }
+    global.fetch(HOT_URL, { cache: 'no-store' }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).then(function (j) {
+      var arr = (j && Array.isArray(j.items)) ? j.items : [];
+      arr = arr.filter(function (h) { return h && (h.url || h.name); })
+               .sort(function (a, b) { return hotHeat(b) - hotHeat(a); });
+      hot = { updated_at: (j && j.updated_at) || '', items: arr };
+      hotErr = '';
+      renderHot();
+    }).catch(function () {
+      // 离线 / 资源缺失都不该让模块报错，只是这块空着
+      hot = { updated_at: '', items: [] };
+      hotErr = '离线或数据文件缺失';
+      renderHot();
+    });
+  }
 
   /* ---------- 编辑 ---------- */
   function openEditor(id) {
@@ -429,6 +590,7 @@
       + '<button class="btn" type="button" data-pr-import>导入 Excel</button>'
       + '<button class="btn" type="button" data-pr-export>导出 Excel</button>'
       + '</div></div>'
+      + '<section class="pr-hot" data-pr-hot></section>'
       + '<section class="pr-stats" data-pr-stats></section>'
       + '<div class="pr-panel">'
       + '<div class="pr-bars" data-pr-bars></div>'
@@ -473,8 +635,15 @@
   /* ---------- 事件（全部委托在 root 上，重绘不用重绑） ---------- */
   function onClick(e) {
     var t = e.target.closest('[data-pr-new],[data-pr-tpl],[data-pr-import],[data-pr-export],'
-      + '[data-pr-reset],[data-pr-edit],[data-pr-del],[data-pr-save],[data-pr-cancel],[data-pr-bar]');
+      + '[data-pr-reset],[data-pr-edit],[data-pr-del],[data-pr-save],[data-pr-cancel],[data-pr-bar],'
+      + '[data-pr-adopt],[data-pr-adopt-all],[data-pr-hot-toggle]');
     if (!t) return;
+    if (t.hasAttribute('data-pr-adopt')) {
+      var one = (hot && hot.items) ? hot.items[Number(t.getAttribute('data-pr-adopt'))] : null;
+      return one ? adopt([one]) : undefined;
+    }
+    if (t.hasAttribute('data-pr-adopt-all')) return adopt(hotFresh(hot && hot.items, items));
+    if (t.hasAttribute('data-pr-hot-toggle')) { hotAll = !hotAll; return renderHot(); }
     if (t.hasAttribute('data-pr-new')) return openEditor(null);
     if (t.hasAttribute('data-pr-tpl')) return downloadTemplate();
     if (t.hasAttribute('data-pr-import')) return $('[data-pr-file]').click();
@@ -519,6 +688,9 @@
     resetFilterInputs();
     load();
     render();
+    renderHot();
+    // 热点只在首次拉取（hot===null 表示还没结果）；模块内已缓存，重开不重复请求
+    if (hot === null) fetchHot();
     root.addEventListener('click', onClick);
     root.addEventListener('input', onFilter);
     root.addEventListener('change', onChange);

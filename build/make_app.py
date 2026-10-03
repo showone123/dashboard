@@ -591,7 +591,7 @@ with open(dist_dest, "w", encoding="utf-8") as f:
 assets_src = os.path.join(ROOT, "assets")
 assets_dest = os.path.join(ROOT, "dist", "assets")
 os.makedirs(assets_dest, exist_ok=True)
-for asset_name in ("fluxdesk-companion.png", "soymeal-dashboard.html"):
+for asset_name in ("fluxdesk-companion.png", "soymeal-dashboard.html", "hot-projects.json"):
     asset_target = os.path.join(assets_dest, asset_name)
     if os.path.exists(asset_target):
         os.chmod(asset_target, 0o666)

@@ -82,4 +82,55 @@ assert.ok(P.matchItem(A, Object.assign({}, NONE, { from: '2026-10-03', to: '2026
 /* ---------- today() 形状 ---------- */
 assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(P.today()));
 
-console.log('projects.js 自检通过：日期 7 · Star 7 · 表头 8 · 列序 2 · 筛选 13 · 边界 2');
+/* ---------- 热点推荐：排序热度 / 收进行 / 去重 ---------- */
+// 日榜与周榜量纲不同，heat 必须按「日增 × 7」折算后再比，否则日榜永远打不过周榜
+assert.strictEqual(P.hotHeat({ stars_today: 100, stars_week: 0 }), 700);
+assert.strictEqual(P.hotHeat({ stars_today: 0, stars_week: 900 }), 900);
+assert.strictEqual(P.hotHeat({ stars_today: 100, stars_week: 900 }), 900);
+assert.strictEqual(P.hotHeat({}), 0);
+assert.ok(P.hotHeat({ stars_today: 200 }) > P.hotHeat({ stars_today: 150 }), '日榜要能比大小');
+
+// 热点项 → 库行：字段名和类型都要落成库里的口径
+const hotRow = P.hotToRow({
+  name: 'obra/superpowers', url: 'https://github.com/obra/superpowers',
+  category: '开发者工具', summary: '技能框架', openness: '完全开源',
+  stars: 294629, note: '热点推荐 · 日榜 +556', found_at: '2026-10-03'
+});
+assert.deepStrictEqual(P.rowToArray(hotRow),
+  ['2026-10-03', 'obra/superpowers', 'https://github.com/obra/superpowers',
+   '开发者工具', '技能框架', '完全开源', 294629, '热点推荐 · 日榜 +556'],
+  '热点项收进后必须与导出列顺序对齐');
+
+// 缺字段的脏数据不能把库行搞成 undefined
+const dirty = P.hotToRow({ url: 'https://github.com/a/b' });
+assert.strictEqual(dirty.name, '');
+assert.strictEqual(dirty.category, '其他', '缺类别要有兜底，不能是空');
+assert.strictEqual(dirty.openness, '源码可见');
+assert.strictEqual(dirty.stars, 0);
+assert.strictEqual(dirty.added_at, P.today(), '缺入库日期时按今天算');
+assert.ok(dirty.note.length > 0, '备注要有兜底');
+
+// 副信息拼装
+assert.strictEqual(P.hotFacts({ stars_today: 556, language: 'Shell' }), '日榜 +556 · Shell');
+assert.strictEqual(P.hotFacts({ stars_week: 12825, created_at: '2026-01-02' }), '周榜 +12,825 · 建库 2026-01-02');
+assert.strictEqual(P.hotFacts({}), '', '没有可展示的信息时不该留下分隔符');
+
+// 去重：以「地址优先、其次名称」为键，且忽略大小写
+assert.strictEqual(P.depKey({ url: 'HTTPS://GitHub.com/A/B' }), 'https://github.com/a/b');
+assert.strictEqual(P.depKey({ name: 'A/B' }), 'a/b');
+const owned = [{ url: 'https://github.com/obra/superpowers' }];
+const fresh = P.hotFresh([
+  { url: 'https://github.com/obra/superpowers' },          // 已在库
+  { url: 'https://github.com/OBRA/Superpowers' },          // 大小写不同也算已在库
+  { url: 'https://github.com/new/one', name: 'new/one' }   // 新的
+], owned);
+assert.strictEqual(fresh.length, 1, '去重必须与 Excel 导入同口径，否则会收进重复项');
+assert.strictEqual(fresh[0].url, 'https://github.com/new/one');
+assert.strictEqual(P.hotFresh([{ name: 'x' }], []).length, 1, '空库时全都是新的');
+// 无 url 无 name 的脏项不能算「新」
+assert.strictEqual(P.hotFresh([{ url: '' , name: '' }], []).length, 0);
+
+/* ---------- 热点数据源路径必须与 make_app.py 的白名单一致 ---------- */
+assert.strictEqual(P.HOT_URL, '/assets/hot-projects.json');
+
+console.log('projects.js 自检通过：日期 7 · Star 7 · 表头 8 · 列序 2 · 筛选 13 · 边界 2 · 热点 18');
