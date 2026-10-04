@@ -77,7 +77,7 @@ CREATE TABLE public.operators (
     CONSTRAINT operators_pkey PRIMARY KEY (owner_id)
 );
 
--- 1.5 GitHub 项目收藏表（迁移 003）：运营方独占的选题库。
+-- 1.5 GitHub 收录项目表（迁移 003 建表 + 迁移 004 改公开只读）：**读公开、写运营方独占**。
 --     ⚠️ 与 1.1~1.3 不同：id 是**前端生成的 text**（uid()，形如 'pm1x2y3z4'），
 --        不是 bigint IDENTITY。原因见迁移 003 的设计要点 3：
 --        Excel 批量导入要幂等，沿用前端 id 才能"重导同一份表 = 覆盖"而不是"再插一批"。
@@ -121,11 +121,16 @@ GRANT UPDATE (status, plan, expires_at, updated_at, note)
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.datasets       TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.notifications   TO authenticated;   -- 实际写入受 RLS 限制为运营方
 GRANT SELECT                          ON public.operators      TO authenticated;   -- 只读，用于判断自己是不是运营方
--- projects（迁移 003）：四个 DML 动作都授，但行级被 projects_operator_all 收死成"仅运营方"。
--- ⚠️ 这张表**没有序列**要授 —— id 由前端生成（text），不是 IDENTITY / serial。
+-- projects（迁移 003 + 004）：**唯一一张 anon 也有读权限的表**（展示页，人人可看）。
+-- ⚠️ 这张表**没有序列**要授 —— id 由前端/运维侧生成（text），不是 IDENTITY / serial。
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.projects       TO authenticated;
+GRANT SELECT                          ON public.projects      TO anon;   -- 迁移 004：公开只读，**只授 SELECT 这一个动作**
 REVOKE TRUNCATE, REFERENCES, TRIGGER ON public.projects       FROM authenticated, anon;  -- 新表要自己再收一次，见下方说明
 REVOKE ALL                            ON public.projects      FROM anon;
+-- ⚠️ 上面那句 REVOKE ALL 是迁移 003 写的，会把 anon 全部动作收成 0
+--    —— 所以迁移 004 的 GRANT SELECT **必须排它之后**。两行都在这里保留，
+--    顺序即语义（先全撤、再单授一个），不要"整理"成一行。
+GRANT SELECT                          ON public.projects      TO anon;
 
 GRANT USAGE, SELECT ON SEQUENCE public.notifications_id_seq TO authenticated;     -- bigserial 需要显式序列权限
 GRANT USAGE, SELECT ON SEQUENCE public.access_grants_id_seq TO authenticated;     -- IDENTITY 列同样需要
@@ -150,12 +155,13 @@ ALTER TABLE public.projects      ENABLE ROW LEVEL SECURITY;
 
 
 -- =============================================================================
---  4. RLS 策略（共 13 条）
---     模型：read-own + operator-override。
+--  4. RLS 策略（共 14 条）
+--     模型：read-own + operator-override + 一张公开只读表。
 --       · 普通用户只能看/改 owner_id = auth.uid() 的行；
 --       · operators 里登记过的用户额外获得「看全部 / 改全部」的旁路。
---       · projects 是**纯 operator-only**（没有 read-own 这一半）——
---         它不是「用户自己的数据 + 运营方能看」，而是「运营方独占」。
+--       · projects 是**写入侧 operator-only**：读全开（迁移 004 的 projects_public_read），
+--         增/改/删仍然只有运营方能动。它不是「用户自己的数据 + 运营方能看」那一类，
+--         而是「一张全站共享的展示表」—— 所以没有 read-own 这一半，只有 public-read + operator-write。
 -- =============================================================================
 
 -- ---- 4.1 access_grants（4 条）----
@@ -232,10 +238,20 @@ CREATE POLICY notifications_operator_write ON public.notifications
 CREATE POLICY operators_read_own ON public.operators
     FOR SELECT TO authenticated USING (owner_id = auth.uid());
 
--- ---- 4.5 projects（1 条）----
--- 运营方独占：读/增/改/删四个动作合成一条 FOR ALL，条件同一句 EXISTS。
+-- ---- 4.5 projects（2 条：公开读 + 运营方写）----
+--
+-- 4.5.1 projects_public_read（迁移 004）—— 「收录项目」展示页，人人可读。
+-- ⚠️ 只有 FOR SELECT。**绝不能写成 FOR ALL** —— FOR ALL 少了 WITH CHECK 就等于敞开写入面。
+-- ⚠️ PostgreSQL 对**同一条命令**是多条 permissive 策略 **OR** 的关系：
+--    加一条恒真的 SELECT 策略，只放宽 SELECT；INSERT/UPDATE/DELETE 这条命令下
+--    只有下面的 projects_operator_all 适用，所以写权限**一点没变**。
+--    ★ 这条是"前端只读 + 数据公开"这个需求的全部技术含量所在，改它先想清楚。
+CREATE POLICY projects_public_read ON public.projects
+    FOR SELECT TO anon, authenticated USING (true);
+
+-- 4.5.2 projects_operator_all（迁移 003）—— 写侧独占：读/增/改/删合成一条 FOR ALL。
 -- ⚠️ 为什么不拆成四条（read/insert/update/delete）：
---    本表的权限模型是"全有或全无"，拆开只是把同一句 EXISTS 抄四遍，
+--    本表的**写入侧**权限模型是"全有或全无"，拆开只是把同一句 EXISTS 抄四遍，
 --    反而多出"漏配一条 → 某动作 42501"的风险。语义上确实是一条规则。
 -- ⚠️ USING 与 WITH CHECK **都要写**：
 --    USING 管 SELECT/UPDATE/DELETE 能看到与能动哪些行；
@@ -252,16 +268,16 @@ CREATE POLICY projects_operator_all ON public.projects
 -- =============================================================================
 --  5. 上线自检清单（每次改动权限后都应该跑一遍）
 -- =============================================================================
---  5.1 确认 anon 在所有业务表上都是 0 权限：
+--  5.1 确认 anon 只在 projects 上有权限、且恰好只有 SELECT（迁移 004 之后）：
 --      SELECT table_name, privilege_type FROM information_schema.role_table_grants
---      WHERE table_schema='public' AND grantee='anon';        -- 期望：0 行
+--      WHERE table_schema='public' AND grantee='anon';        -- 期望：恰好 1 行 = projects / SELECT
 --
 --  5.2 确认所有表都开了 RLS：
 --      SELECT c.relname, c.relrowsecurity FROM pg_class c
 --      JOIN pg_namespace n ON n.oid=c.relnamespace
 --      WHERE n.nspname='public' AND c.relkind='r';            -- 期望：rls 全 true
 --
---  5.3 列出全部策略核对数量（期望 13 条）：
+--  5.3 列出全部策略核对数量（期望 14 条）：
 --      SELECT tablename, policyname, cmd FROM pg_policies WHERE schemaname='public';
 --
 --  5.4 真实流量验证（比读元数据更可信）—— 拿 publishableKey 匿名请求：
@@ -307,4 +323,20 @@ CREATE POLICY projects_operator_all ON public.projects
 --        (c) ★ 新表要**自己** REVOKE 一次 TRUNCATE / REFERENCES / TRIGGER ——
 --            001 里那句 `ON ALL TABLES` 只覆盖它执行时已存在的表。
 --            实测线上 anon 在 projects 上权限为 0、authenticated 恰好四项 DML。
+--
+--  2026-10-04  migration 004_projects_public_read（收录项目：读公开、写独占）
+--      需求：「把前端功能给我去了，这个分区以后就纯做展示页……我要让所有人看到
+--              全部收录的项目。」
+--      改动前：projects 是纯 operator-only —— 非运营方即使进得了页面，REST 也只会
+--              拿到 0 行（RLS **静默**过滤，不报错），表现为「收录项目」永远空白。
+--      改动后：public.projects 的 GRANT SELECT 给 anon + 一条
+--              projects_public_read `FOR SELECT TO anon, authenticated USING (true)`。
+--      四个关键点，已写进迁移文件：
+--        (a) ★ 只**新增**策略，不碰 003 的 projects_operator_all；
+--            permissive 策略对同一条命令取 OR，所以加恒真 SELECT **不可能**放宽写；
+--        (b) ★ 只授 SELECT 给 anon，不用 `GRANT ALL` —— 匿名能发写请求本身就是攻击面；
+--        (c) ★ 绝**不能**把这条写成 `FOR ALL`（缺 WITH CHECK 会让写入面敞开）；
+--        (d) 前端同步删掉了全部写入口，写操作只剩运维侧定时任务
+--            （db_exec_sql 管理通道，天然绕过 RLS）。
+--      三份清单同步：db_policies 13 → 14（本文件 4.5 + contract.json + 004 迁移）。
 -- =============================================================================

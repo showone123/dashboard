@@ -129,6 +129,20 @@ def extract_js_array(src, varname):
     return re.findall(r"'([^']*)'", m.group(1))
 
 
+def strip_js_comments(src):
+    """剥掉 JS 注释，供"源码形态"类判据使用。
+
+    ⚠️ 2026-10-04 踩过：projects.js 的模块头注释里明写着它**不许**出现
+    `.insert( / .update( / .upsert( / .delete(` 四个名字，不剥注释就会拿自己的
+    说明文字当证据，直接假红。
+    只剥两种：块注释与**整行**注释。刻意不剥行尾注释 —— URL 字符串里
+    （'https://…'）也含两个斜杠，按行尾剥会把同行后面的真实代码一起吃掉，
+    反而制造"扫不到"的假阴性（比假红危险得多）。
+    """
+    src = re.sub(r"/\*[\s\S]*?\*/", "", src)
+    return re.sub(r"^[ \t]*//.*$", "", src, flags=re.M)
+
+
 def find_insert_objects(src):
     """找出所有 .insert({ ... }) / .upsert({ ... }) 的顶层键名，返回 [(行号, [键名...])]。
 
@@ -362,26 +376,20 @@ def check_contract():
 
     # ---- 6.2 身份列禁令（线上事故回归哨兵）----
     # ⚠️ 哨兵是**结构化**的：只解析 .insert/.upsert 紧跟着的对象字面量，不做全文搜字符串。
-    #    因为 build/projects.js 里的 IDENTITY_COLS 数组本身就含有
-    #    'owner_id' / 'created_by' 这两个字面量，全文搜必然假红。
-    # ⚠️ 结构化扫描有个盲区：字段集若是函数拼出来的（projects.js 的 insertRows/upsertRows
-    #    调 fieldsOf()），就扫不到任何字面量。那一侧的守卫交给
-    #    `node build/check_projects.js` 的「库字段 6 条」——它断言 fieldsOf 的键集
-    #    既不含身份列、又与 COLS 一一对应。两道互补，缺一不可。
+    # ⚠️ 2026-10-04 起扫描范围**只剩 app.js**：
+    #    projects.js 已改成公开只读展示页，一个写调用都没有（见下面 6.2b 的只读守卫），
+    #    自然也没有 insert 字段集可查。它原来的那半守卫（fieldsOf 键集 + 身份列哨兵）
+    #    随写入口一起删除了 —— 守卫要跟着被守的代码走，留着只会变成永不触发的死断言。
     # 后面 6.3/6.4 还要用 app.js 的源码，这里先取出来复用（别在循环里改名把它丢了）
     appjs = rd("build", "app.js")
-    for fname in ("app.js", "projects.js"):
-        fsrc = appjs if fname == "app.js" else rd("build", fname)
+    for fname in ("app.js",):
+        fsrc = appjs
         if fsrc is None:
             bad("缺少 build/" + fname)
             continue
         inserts = find_insert_objects(fsrc)
         if not inserts:
-            if fname == "app.js":
-                bad("app.js 里找不到任何 .insert(...) —— 契约无法校验")
-            else:
-                info("%s 里没有字面量 insert（字段由 fieldsOf() 拼装，"
-                     "身份列守卫见 check_projects.js 的「库字段」断言）" % fname)
+            bad("app.js 里找不到任何 .insert(...) —— 契约无法校验")
             continue
         info("%s 扫到 %d 处 insert：%s" % (
             fname, len(inserts),
@@ -397,28 +405,41 @@ def check_contract():
         else:
             ok("%s 的 insert 字段集干净（不含 %s）" % (fname, "、".join(fc["forbidden_insert_columns"])))
 
-    # ---- 6.2b 存储层确实在云端（需求「数据保存到服务器而非本地」的回归哨兵）----
-    # 防的是这条需求静默回退：有人把 load/save 改回 localStorage，功能照跑、测试照绿，
-    # 但数据又变回"只在这台机器上"。这里从源码形态上把它钉住。
+    # ---- 6.2b 纯只读展示页守卫（2026-10-04 起取代原「存储层在云端」哨兵）----
+    # 需求原话：「这个分区以后就纯做展示页……我要让所有人看到全部收录的项目。」
+    # 这条需求有两个**静默**失效方向，都必须从源码形态上钉死：
+    #   ① 有人把编辑/删除/新增加回来 —— 页面照常工作、测试照绿，但"公开只读"的承诺破了；
+    #      更糟的是 RLS 会把非运营方的写请求**静默拒掉**（返回空行集不报错），
+    #      表现为"点了没反应"，极难排查。
+    #   ② 有人把数据源改回 localStorage —— "所有人都能看到同一份"就退化成"各看各的"。
+    # 所以判据是：**云表读调用 ≥1 处、写调用 0 处、localStorage 全量写入 0 处**。
     projs = rd("build", "projects.js")
     if projs is None:
         bad("缺少 build/projects.js")
     else:
-        m = re.search(r"var\s+TABLE\s*=\s*['\"](\w+)['\"]", projs)
+        # ⚠️ 先剥注释：模块头注释里就写着这四个写调用的名字（不剥必假红）
+        pcode = strip_js_comments(projs)
+        m = re.search(r"var\s+TABLE\s*=\s*['\"](\w+)['\"]", pcode)
         if m and m.group(1) in fc["db_tables"]:
             ok("projects.js 的数据表 %s 在契约 db_tables 内" % m.group(1))
         else:
             bad("projects.js 的数据表不在契约 db_tables 内",
                 "源码取到：%s\n契约：%s" % (m.group(1) if m else "（没找到 TABLE 常量）",
                                         ", ".join(fc["db_tables"])))
-        cloud_calls = re.findall(r"\.from\(\s*TABLE\s*\)", projs)
-        ls_full = re.findall(r"localStorage\.setItem\(\s*LS_KEY", projs)
-        if len(cloud_calls) >= 5 and not ls_full:
-            ok("projects.js 读写全走云表（%d 处），无本地全量写入" % len(cloud_calls))
+        reads = len(re.findall(r"\.from\(\s*TABLE\s*\)", pcode))
+        writes = []
+        for fn in ("insert", "update", "upsert", "delete"):
+            for hit in re.finditer(r"\.%s\s*\(" % fn, pcode):
+                writes.append("%s L%d" % (fn, pcode.count("\n", 0, hit.start()) + 1))
+        ls_full = re.findall(r"localStorage\.setItem", pcode)
+        if reads >= 1 and not writes and not ls_full:
+            ok("projects.js 是纯只读展示页（云表读 %d 处 · 写调用 0 处 · 无本地写入）" % reads)
         else:
-            bad("projects.js 的存储层不在云端，「数据保存到服务器」这条需求未生效",
-                "云表调用 %d 处（期望 ≥5）；对 LS_KEY 的全量写入 %d 处（期望 0）"
-                % (len(cloud_calls), len(ls_full)))
+            bad("projects.js 不再是纯只读展示页",
+                "云表读调用 %d 处（期望 ≥1）；写调用 %s（期望 0 处）；"
+                "localStorage 写入 %d 处（期望 0）\n"
+                "写入口已于 2026-10-04 整段删除，展示数据只由运维侧定时任务写入。"
+                % (reads, "、".join(writes) if writes else "0 处", len(ls_full)))
 
         # ---- 6.3 限额与键名 ----
         m = re.search(r"var\s+MAX_UPLOAD\s*=\s*([^;]+);", appjs)

@@ -116,10 +116,12 @@ __APPCSS__
       <button class="app-tab nav-child" data-tab="history" title="数据看板历史" type="button"><span class="nav-glyph">▤</span><span class="nav-text">历史数据</span></button>
       <button class="app-tab" data-tab="futures" title="期货工具箱" type="button"><span class="nav-glyph">▥</span><span class="nav-text">期货工具箱</span></button>
       <button class="app-tab" data-tab="stocks" title="股票工作台" type="button"><span class="nav-glyph">▥</span><span class="nav-text">股票工作台</span></button>
-      <!-- ⚠️ GitHub 项目收藏是**运营方独占**（数据在 RLS 收死的 public.projects 上）。
-           初始带 hidden，由 app.js 的 applyOperatorNav() 在判定身份后决定是否显示。
-           改 id 要同步改 app.js 的 applyOperatorNav()。 -->
-      <button class="app-tab hidden" data-tab="projects" title="GitHub 项目收藏" id="tabProjects" type="button"><span class="nav-glyph">▨</span><span class="nav-text">GitHub 项目收藏</span></button>
+      <!-- ⚠️「收录项目」是**全站公开的只读展示页**（2026-10-04 起），
+           所以**不带 hidden**、不由 applyOperatorNav() 控制 —— 每个用户都看得到。
+           读权限靠迁移 004 的 projects_public_read（anon + authenticated 全开），
+           写权限仍由 projects_operator_all 收死，且前端已无写入口。
+           改 id 要同步改 app.js 的 switchTab()。 -->
+      <button class="app-tab" data-tab="projects" title="收录项目" id="tabProjects" type="button"><span class="nav-glyph">▨</span><span class="nav-text">收录项目</span></button>
     </nav>
     <div class="workspace-nav-label">风险管理</div>
     <nav class="workspace-nav">

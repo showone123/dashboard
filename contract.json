@@ -67,7 +67,7 @@
     "risk_log_account_prefix_length": 4,
     "risk_log_max_upload_bytes": 20971520,
     "risk_log_storage_prefix": "risk-logs/",
-    "_note_db": "数据库结构契约。改表/改策略必须写成 migrations/ 下的增量文件，不要改 001_init.sql。",
+    "_note_db": "数据库结构契约。改表/改策略必须写成 migrations/ 下的增量文件，不要改 001_init.sql。projects 是**读公开（anon+authenticated）、写运营方独占**：读靠 projects_public_read（FOR SELECT USING(true)），写靠 projects_operator_all（FOR ALL + EXISTS operators）。permissive 策略对同一条命令取 OR，所以恒真 SELECT 不会放宽写权限。",
     "db_tables": [
       "access_grants",
       "datasets",
@@ -88,7 +88,8 @@
       "notifications_operator_write",
       "notifications_read",
       "operators_read_own",
-      "projects_operator_all"
+      "projects_operator_all",
+      "projects_public_read"
     ],
     "db_identity_columns_are_text": [
       "access_grants.owner_id",

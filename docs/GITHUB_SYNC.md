@@ -220,6 +220,6 @@ python github_sync.py --pull           # 拉远端 → _incoming/（不动本地
 python github_sync.py --diff           # 看差异（标敏感文件）
 python github_sync.py --show <file>    # 看某文件的具体 diff
 python github_sync.py --apply          # 落地（先备份）
-python verify.py                       # 门禁：43 项，退出码 0 才部署
+python verify.py                       # 门禁：59 项，退出码 0 才部署
 python github_sync.py --push -m "msg"  # 回写（会先跑 verify.py）
 ```

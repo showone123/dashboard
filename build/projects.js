@@ -1,21 +1,27 @@
 /* ==========================================================================
-   GitHub 项目收藏（Project Library）—— 运营方独占 · 云端存储
+   GitHub 收录项目 —— 全站公开的**只读展示页**
    ---------------------------------------------------------------------------
-   把从 GitHub 上收集到的项目建档、分类、筛选、导出。
-   Excel 读写复用页面已引入的 SheetJS（XLSX），不新增依赖。
+   两个视图：
+     · 收录项目（默认）—— 云表 public.projects 的**全量**，按更新时间倒序铺开；
+       支持关键词 / 类别 / 开源程度 / 日期区间 / Star 下限筛选，可导出 Excel。
+     · 热点榜 —— 静态资源 /assets/hot-projects.json，按升星速度或总星数排名。
 
-   ★ 数据存在云数据库 public.projects，不在 localStorage。
-     版本历史：2026-10-03 之前是纯 localStorage（fluxdesk_projects_v1:<userId>），
-     换设备就丢、且每个用户各存一份。现改为服务端存储，老数据会**一次性自动搬迁**
-     （见 migrateLocal()）。
-   ★ 权限：整张表由 migrations/003_projects.sql 的 projects_operator_all 策略收死成
-     「仅 operators 名单内可读写」。前端把导航项藏起来只是体验，真正的门在 RLS ——
-     非运营方手工构造 REST 请求也只会拿到 0 行。
+   ★ 2026-10-04 改版：**删掉了整个写入口**（新增 / 编辑 / 删除 / Excel 导入 /
+     下载模板 / 云同步状态条）。需求原话是「这个分区以后就纯做展示页」。
+     写现在只由运维侧的定时任务产生（走 db_exec_sql 管理通道，天然绕过 RLS）。
 
-   对外接口：window.ProjectsDesk.open(node, userId) / .close()
-   数据契约（也是 Excel 模板的表头顺序）见 COLS —— 改这里等于改模板契约。
-   改字段集必须同步改三处：本文件 COLS、migrations/003_projects.sql 的建表、
-   check_projects.js 的断言。
+   ★ 数据存在云数据库 public.projects，**读是公开的**：
+     迁移 004 的 projects_public_read 是 `FOR SELECT TO anon, authenticated USING (true)`，
+     所以任何访客都能看到全部收录项目；写权限仍只有 operators 名单内的人有
+     （迁移 003 的 projects_operator_all，未改动）。
+     ⚠️ 反向推论：这个模块**不能**出现任何写调用。verify.py §6.2b 会从源码层面拦
+        （扫描 .insert( / .update( / .upsert( / .delete( 四个字面量）。
+
+   ★ 为什么 id 还留着：它是表主键，也是 Excel 重复导入时代的 upsert 锚点；
+     展示页不需要它，但删掉会让历史数据失去稳定标识，所以只读不改。
+
+   对外接口：window.ProjectsDesk.open(node) / .close() / .count()
+   数据契约（也是 Excel 导出的表头顺序）见 COLS —— 改这里等于改模板契约。
    ========================================================================== */
 (function (global) {
   'use strict';
@@ -68,33 +74,6 @@
     return isFinite(n) ? Math.max(0, Math.round(n)) : 0;
   }
 
-  function field(row, keys) {
-    for (var i = 0; i < keys.length; i++) {
-      for (var j = 0; j < Object.keys(row).length; j++) {
-        var k = Object.keys(row)[j];
-        if (String(k).replace(/\s/g, '') === keys[i].replace(/\s/g, '')) {
-          var v = row[k];
-          if (v !== null && v !== undefined && String(v).trim() !== '') return v;
-        }
-      }
-    }
-    return '';
-  }
-
-  // Excel 行 → 数据项。表头容错：带不带空格、用不用别名都能认。
-  function rowFromExcel(row) {
-    return {
-      added_at: toDate(field(row, ['入库日期', '日期', 'added_at'])),
-      name: String(field(row, ['项目名称', '名称', '项目', 'name']) || '').trim(),
-      url: String(field(row, ['仓库地址', '地址', '链接', 'url']) || '').trim(),
-      category: String(field(row, ['项目类别', '类别', '分类', 'category']) || '').trim(),
-      summary: String(field(row, ['项目简介', '简介', '说明', 'summary']) || '').trim(),
-      openness: String(field(row, ['开源程度', '开源', 'openness']) || '').trim(),
-      stars: toStars(field(row, ['Star 数', 'Star数', 'star', 'stars', '星标'])),
-      note: String(field(row, ['备注', 'note']) || '').trim()
-    };
-  }
-
   function rowToArray(it) {
     return COLS.map(function (c) { return it[c.k]; });
   }
@@ -113,39 +92,34 @@
     return true;
   }
 
-  /* ---------- 数据库字段集（单一事实来源） ----------
-     ★ 插入与更新都走这一个函数，绝不在调用处另写一份字段表 ——
-       字段表抄两遍必然漂移，而漂移的后果是"某一列永远存不进去"。
-     ★ 这里**永远不能出现身份列**（owner_id / created_by）：
-       身份交给列的 DEFAULT auth.uid()，客户端自报身份既不可信也会被 RLS 拒。
-       同理 update 里也不放 created_at。
-     ★ 也不要传 null 去"触发默认值" —— 显式 null 会覆盖 DEFAULT，反而被 RLS 拒。
-       （平台文档明确写了这条，见 cloud-service/references/database/code-generation.md）
-     check_projects.js 会断言本函数的键集：既不含身份列，也不缺业务列。 */
-  var IDENTITY_COLS = ['owner_id', 'created_by', 'user_id'];
-
-  function fieldsOf(it, now) {
-    return {
-      added_at: toDate(it && it.added_at) || today(),
-      name: String((it && it.name) || '').trim(),
-      url: String((it && it.url) || '').trim(),
-      category: String((it && it.category) || '').trim() || '其他',
-      summary: String((it && it.summary) || '').trim(),
-      openness: String((it && it.openness) || '').trim() || '源码可见',
-      stars: toStars(it && it.stars),
-      note: String((it && it.note) || '').trim(),
-      updated_at: now || new Date().toISOString()
-    };
+  /* ---------- 「更新顺序」是这个页面的默认口径 ----------
+     需求原话：「点进去默认按照更新顺序全部显示」。
+     ⇒ 用 updated_at 倒序（最近被更新过的排最前），它才是真正的"更新顺序"；
+        added_at 只是"第一次收录的日期"，手工补录/回填的数据两者会不一致。
+     ⚠️ 兜底不能省：早期数据与运维侧直插的行可能没有 updated_at，
+        这时退到 added_at（补一个 T00:00:00Z 让两种格式能直接比字符串）。
+     ⚠️ 副键必须给（同日/同秒按 Star 降序），否则同一份数据两次渲染顺序会漂。 */
+  function orderOf(it) {
+    var u = String((it && it.updated_at) || '').trim();
+    if (u) return u;
+    return String((it && it.added_at) || '') + 'T00:00:00Z';
   }
 
-  var PURE = { COLS: COLS, toDate: toDate, toStars: toStars, rowFromExcel: rowFromExcel,
-    rowToArray: rowToArray, matchItem: matchItem, today: today,
-    fieldsOf: fieldsOf, IDENTITY_COLS: IDENTITY_COLS };
+  function sortRows(list) {
+    return (list || []).slice().sort(function (a, b) {
+      var ua = orderOf(a), ub = orderOf(b);
+      if (ua !== ub) return ua < ub ? 1 : -1;
+      return Number(b && b.stars || 0) - Number(a && a.stars || 0);
+    });
+  }
 
-  /* ---------- 热点推荐（服务端数据源 → 可一键收进个人库） ----------
+  var PURE = { COLS: COLS, toDate: toDate, toStars: toStars, rowToArray: rowToArray,
+    matchItem: matchItem, today: today, sortRows: sortRows, orderOf: orderOf };
+
+  /* ---------- 热点榜（静态资源，只读情报） ----------
      数据由 build/refresh_hot.py 每晚生成，作为静态资源放在 /assets/hot-projects.json。
-     为什么不直接写进 localStorage：这是**只读的公共情报**，不该每天自动污染个人库；
-     收进与否由人决定（收进后即可编辑/导出/纳入筛选）。
+     为什么不直接写进云表：这是**只读的公共情报**，每天自动灌进"收录项目"里
+     会让展示表变成流水账；收录与否由运维侧的定时任务决定。
      —— 静态资源不需要动 server.py，所以 dist/server.py 的字节契约保持不变。 */
   var HOT_URL = '/assets/hot-projects.json';
 
@@ -177,20 +151,6 @@
     });
   }
 
-  // 热点项 → 库里那套字段（收进时直接用）
-  function hotToRow(h) {
-    return {
-      added_at: toDate(h && h.found_at) || today(),
-      name: String((h && h.name) || '').trim(),
-      url: String((h && h.url) || '').trim(),
-      category: String((h && h.category) || '').trim() || '其他',
-      summary: String((h && h.summary) || '').trim(),
-      openness: String((h && h.openness) || '').trim() || '源码可见',
-      stars: toStars(h && h.stars),
-      note: String((h && h.note) || '热点推荐').trim()
-    };
-  }
-
   // 「日榜 +556 · 周榜 +3,124 · Shell · 建库 2026-01-02」
   function hotFacts(h) {
     var n = function (x) { return Number(x || 0).toLocaleString('zh-CN'); };
@@ -202,7 +162,7 @@
     return bits.join(' · ');
   }
 
-  // 去重键：地址优先，其次名称（与 Excel 导入同一口径）
+  // 去重键：地址优先，其次名称（统一小写）
   function depKey(o) { return String((o && (o.url || o.name)) || '').toLowerCase(); }
 
   function hotFresh(list, owned) {
@@ -210,7 +170,7 @@
     (owned || []).forEach(function (it) { var k = depKey(it); if (k) seen[k] = 1; });
     return (list || []).filter(function (h) {
       var k = depKey(h);
-      // 没有 key 的脏项直接丢：既无法去重，也不该被收进库（与 Excel 导入同一口径）
+      // 没有 key 的脏项直接丢：既无法去重，也不该被算成"已收录"
       return k && !seen[k];
     });
   }
@@ -219,7 +179,6 @@
   PURE.hotHeat = hotHeat;
   PURE.hotGain = hotGain;
   PURE.hotRank = hotRank;
-  PURE.hotToRow = hotToRow;
   PURE.hotFacts = hotFacts;
   PURE.hotFresh = hotFresh;
   PURE.depKey = depKey;
@@ -227,18 +186,23 @@
   if (typeof module === 'object' && module.exports) { module.exports = PURE; return; }
 
   /* ---------- 运行时状态 ---------- */
-  var root = null, user = '', items = [], active = false;
+  var root = null, items = [], active = false;
+  /* 正在读取的次数（>0 即"数据还在路上"）。状态位必须用它，不能拿 items.length 反推 ——
+     见 renderState() 里的踩坑记录。 */
+  var pending = 0;
   var f = { q: '', cat: '', open: '', from: '', to: '', minStars: '' };
-  var editingId = null;
   var hot = null, hotErr = '';   // hot=null 表示还没拉过（成功/失败都会落地）
-  /* 两个视图（2026-10-04）：个人库与热点榜互不遮挡。
-     改之前是「热点卡片压在库表格上方、默认只铺 6 张」—— 用户想找自己收录的东西得先
-     滚过热点区，反过来想看榜单又只能看到 6 条，两头别扭。拆成两个视图后，
-     各自都能铺满：库视图是主视图（默认），热点榜铺全部 20 条并给排名。 */
-  var VIEWS = ['lib', 'hot'];
-  var view = 'lib';
+  /* 两个视图：收录项目（默认，主视图）与热点榜。
+     改版前这里是「我的库 / 热点榜」——库是私有的、默认只给运营方看；
+     现在收录项目是全站公开的展示页，所以它继续当默认视图。 */
+  var VIEWS = ['all', 'hot'];
+  var view = 'all';
   // 榜单口径：gain=升星速度（日均），stars=总星数。默认升星，那才是"热点"。
   var hotSort = 'gain';
+
+  // 表格自己的列数（序号 + 6 个业务列）—— 空态那一行的 colspan 用它。
+  // ⚠️ 它与 COLS.length（Excel 导出契约 8 列）是**两回事**，别互相代用。
+  var TCOLS = 7;
 
   function $(sel) { return root.querySelector(sel); }
   function esc(s) {
@@ -246,22 +210,16 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
   }
-  function uid() { return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+  function num(n) { return Number(n || 0).toLocaleString('zh-CN'); }
 
-  /* ---------- 持久化：云数据库 public.projects（运营方独占） ----------
-     权限边界见 migrations/003_projects.sql 的 projects_operator_all：
-     读 / 增 / 改 / 删四个动作全部要求 auth.uid() 出现在 operators 名单里。
-     ⇒ 这里**不需要**自己 .eq('owner_id', ...)，RLS 已经把别人的行过滤掉了。
-
-     ★ 关键陷阱：RLS 的拒绝是**静默**的 —— 不报错、只返回空行集。
-       所以每个写操作之后都必须显式检查返回行数，否则"被拦下"会被当成"成功"，
-       用户看到"已入库"但刷新后什么都没了。（平台文档原话：
-       "An empty result array means RLS blocked the write — not that it succeeded."） */
-
+  /* ---------- 读取：云数据库 public.projects（公开只读） ----------
+     权限边界见 migrations/004_projects_public_read.sql：
+     SELECT 对 anon + authenticated 全开，所以这里**不需要**任何身份判断，
+     也不需要 .eq('owner_id', ...) —— 全表就是展示内容。
+     ★ 本模块**只读**。任何 .insert/.update/.upsert/.delete 都会被
+       verify.py §6.2b 从源码层面拦下（这是"纯展示页"这条需求的回归哨兵）。 */
   var TABLE = 'projects';
-  var LS_KEY = 'fluxdesk_projects_v1:';           // 旧版本地键，仅用于一次性搬迁
-  var MIG_KEY = 'fluxdesk_projects_migrated_v1';  // 搬迁完成标记
-  var loadErr = '';                               // 读取失败原因，渲染成顶部红条
+  var loadErr = '';
 
   function api() {
     return (global.cloud && global.cloud.database) ? global.cloud.database : null;
@@ -270,118 +228,76 @@
   // SDK 报错 → 能照着做的中文（不要把 traceback 甩给用户）
   function dbErr(e) {
     var m = (e && e.message) ? String(e.message) : String(e || '未知错误');
-    if (/42501|permission denied|row-level security/i.test(m)) return '没有权限：该功能仅管理员可用';
+    if (/42501|permission denied|row-level security/i.test(m)) return '没有权限读取：请确认迁移 004 已应用（projects_public_read）';
     if (/401|not authenticated|jwt|token/i.test(m)) return '登录已过期，请刷新页面重新登录';
     if (/failed to fetch|network|load failed/i.test(m)) return '网络不通，请检查网络后重试';
     return m;
   }
 
-  // 写操作的统一收口：把"静默被拒"变成显式错误
-  function assertWrote(r, what) {
-    if (r && r.error) throw r.error;
-    var n = (r && Array.isArray(r.data)) ? r.data.length : 0;
-    if (!n) throw new Error(what + '未生效（没有权限，或记录已被删除）');
-    return r.data;
+  /* 云客户端没接上时的提示要**指得出下一步**，不能只说"未就绪"：
+     真实故障是 app.js 忘了把实例挂到 window 上，然后这个模块静默地一直渲染空表，
+     界面上一切正常（骨架/筛选器/空态都在），只有数字是 0 —— 2026-10-04 排查实录。 */
+  var NO_CLOUD = '云服务未就绪（app.js 未把 cloud 实例挂到 window）';
+
+  function normalize(it) {
+    var o = {
+      id: (it && it.id) ? String(it.id) : '',
+      // 审计时间要留着：默认排序口径就是 updated_at，丢掉它页面就退回"入库日期"排序
+      updated_at: String((it && it.updated_at) || ''),
+      created_at: String((it && it.created_at) || '')
+    };
+    COLS.forEach(function (c) {
+      o[c.k] = c.k === 'stars' ? toStars(it && it[c.k]) : String((it && it[c.k]) || '').trim();
+    });
+    o.added_at = toDate(o.added_at) || '';
+    return o;
   }
 
   function load() {
     var a = api();
-    if (!a) { loadErr = '云服务未就绪'; return Promise.resolve(); }
-    return a.from(TABLE).select('*').order('added_at', { ascending: false }).limit(1000)
-      .then(function (r) {
-        if (r.error) throw r.error;
-        items = (r.data || []).map(normalize);
-        loadErr = '';
-      })
-      .catch(function (e) { items = []; loadErr = dbErr(e); });
+    if (!a) { loadErr = NO_CLOUD; return Promise.resolve(); }
+    // 服务端先按 updated_at 倒序取（表可能超过 1000 行，不能无条件全量拉），
+    // 客户端再算一遍同样的口径 —— 两条路径（表格 / 导出）共用 sortRows()，顺序不会分叉。
+    // ⚠️ 老列的兼容兜底：万一 updated_at 排序不被支持（返回 error），退回 added_at，
+    //    而不是把整页变成"读取失败"。
+    function q(col) { return a.from(TABLE).select('*').order(col, { ascending: false }).limit(1000); }
+    pending++;
+    return q('updated_at').then(function (r) {
+      return r && r.error ? q('added_at') : r;
+    }).then(function (r) {
+      if (r && r.error) throw r.error;
+      items = (r.data || []).map(normalize);
+      loadErr = '';
+    }).catch(function (e) { items = []; loadErr = dbErr(e); })
+      // 成功/失败都要归零，否则状态位会永久卡在 loading（另一个方向的假象）
+      .then(function () { if (pending > 0) pending--; });
   }
 
-  function insertRows(rows) {
-    var a = api();
-    if (!a) return Promise.reject(new Error('云服务未就绪'));
-    var now = new Date().toISOString();
-    // 用 map 逐行套 fieldsOf()，而不是在这里再写一份字段表（见 fieldsOf 的注释）
-    return a.from(TABLE).insert(rows.map(function (it) {
-      var o = fieldsOf(it, now);
-      o.id = it.id;      // id 由前端生成，作为主键（也是 Excel 重复导入时的 upsert 锚点）
-      return o;
-    })).select();
-  }
-
-  function updateRow(id, it) {
-    var a = api();
-    if (!a) return Promise.reject(new Error('云服务未就绪'));
-    return a.from(TABLE).update(fieldsOf(it)).eq('id', id).select();
-  }
-
-  // Excel 重复导入时用 upsert：主键就是前端 id，所以"同一份表再导一次"是个幂等覆盖，
-  // 而不是每导一次多一批重复行。一次请求写完，不逐行打圈。
-  function upsertRows(rows) {
-    var a = api();
-    if (!a) return Promise.reject(new Error('云服务未就绪'));
-    var now = new Date().toISOString();
-    return a.from(TABLE).upsert(rows.map(function (it) {
-      var o = fieldsOf(it, now);
-      o.id = it.id;
-      return o;
-    })).select();
-  }
-
-  function deleteRow(id) {
-    var a = api();
-    if (!a) return Promise.reject(new Error('云服务未就绪'));
-    return a.from(TABLE).delete().eq('id', id).select();
-  }
-
-  // 一次性搬迁：把旧版本的 localStorage 数据搬进云库。
-  // 只在「没搬过 + 本地确实有数据」时动手；云库已有数据时不搬（由 open() 判断），
-  // 避免把本地那份陈旧副本盖到云端。搬失败不打扰用户，下次再说。
-  function migrateLocal() {
-    var a = api();
-    if (!a) return Promise.resolve(0);
-    var raw = null;
-    try {
-      if (localStorage.getItem(MIG_KEY)) return Promise.resolve(0);
-      raw = localStorage.getItem(LS_KEY + (user || 'anon'));
-    } catch (e) { return Promise.resolve(0); }
-    var rows = null;
-    try { rows = JSON.parse(raw); } catch (e) { rows = null; }
-    if (!Array.isArray(rows) || !rows.length) {
-      try { localStorage.setItem(MIG_KEY, '1'); } catch (e) {}
-      return Promise.resolve(0);
-    }
-    return insertRows(rows.map(normalize)).then(function (r) {
-      var data = assertWrote(r, '搬迁本地数据');
-      try { localStorage.setItem(MIG_KEY, '1'); } catch (e) {}
-      return data.length;
-    }).catch(function () { return 0; });
-  }
-
-  function normalize(it) {
-    var o = { id: it && it.id ? String(it.id) : uid() };
-    COLS.forEach(function (c) {
-      o[c.k] = c.k === 'stars' ? toStars(it && it[c.k]) : String((it && it[c.k]) || '').trim();
-    });
-    o.added_at = toDate(o.added_at) || today();
-    return o;
-  }
-
-  /* ---------- 选择 ---------- */
-  // 排序口径只有一处：入库日期倒序，同日按 Star 降序。
-  // 库表格与「导出全部」共用它，免得两条路径排出两种顺序。
-  function sortRows(list) {
-    return list.slice().sort(function (a, b) {
-      if (a.added_at !== b.added_at) return a.added_at < b.added_at ? 1 : -1;
-      return Number(b.stars) - Number(a.stars);
-    });
-  }
-
+  /* ---------- 派生 ---------- */
   function visible() {
     return sortRows(items.filter(function (it) { return matchItem(it, f); }));
   }
 
   /* ---------- 渲染 ---------- */
-  function num(n) { return Number(n || 0).toLocaleString('zh-CN'); }
+  /* ⚠️ 状态位必须把"正在读"算进去（pending>0 → loading），不能靠"items 为空"反推。
+     2026-10-04 踩坑：open() 先渲染骨架时 items 是空的、loadErr 也是空的 ⇒ 状态位
+     立刻被写成 empty（"暂无收录项目"），而数据其实还在路上。两个后果：
+       ① 界面上先闪一句"暂无收录项目"，几百毫秒后才跳出 22 条，看着像 bug；
+       ② 渲染验收探针等的是「状态位 ≠ loading」，被这个**假的 empty** 提前放行，
+          于是量到 0 行，排序/筛选/全量铺开 一共 6 项断言集体假红 ——
+          结论"页面没数据"是错的，错的是测量时机。加载态只能由读取计数决定。 */
+  function renderState() {
+    var el = $('[data-pr-state]');
+    if (!el) return;
+    var state = pending > 0 ? 'loading'
+      : (loadErr ? 'error' : (items.length ? 'ready' : 'empty'));
+    el.setAttribute('data-pr-state', state);
+    el.className = 'pr-state ' + state;
+    el.textContent = loadErr
+      ? ('读取失败：' + loadErr)
+      : (pending > 0 ? '正在读取…'
+        : (items.length ? ('共 ' + items.length + ' 个收录项目 · 按最近更新排序') : '暂无收录项目'));
+  }
 
   function renderStats() {
     var days30 = new Date(Date.now() - 30 * 86400000);
@@ -440,20 +356,22 @@
     var rows = visible();
     var box = $('[data-pr-body]');
     $('[data-pr-count]').textContent = rows.length === items.length
-      ? ('共 ' + items.length + ' 个项目')
+      ? ('共 ' + items.length + ' 个项目 · 按最近更新排序')
       : ('筛选出 ' + rows.length + ' / ' + items.length + ' 个项目');
     renderExportBar(rows);
 
     if (!rows.length) {
-      box.innerHTML = '<tr><td colspan="' + (COLS.length + 1) + '"><div class="pr-empty">'
+      box.innerHTML = '<tr><td colspan="' + TCOLS + '"><div class="pr-empty">'
         + (items.length
-          ? '<b>没有符合条件的项目</b>放宽筛选条件，或点右侧「重置」。'
-          : '<b>项目库还是空的</b>先「下载模板」按格式填好，再「导入 Excel」批量入库；也可以直接「新增项目」。')
+          ? '<b>没有符合条件的项目</b>放宽筛选条件，或点「重置」。'
+          : (loadErr
+            ? '<b>数据没读到</b>' + esc(loadErr) + '。点右上角「刷新数据」重试。'
+            : '<b>还没有收录任何项目</b>收录内容由运维侧的定时任务写入云端，稍后刷新即可看到。'))
         + '</div></td></tr>';
       return;
     }
 
-    box.innerHTML = rows.map(function (it) {
+    box.innerHTML = rows.map(function (it, i) {
       var tone = TONE[it.openness] || 'muted';
       var link = it.url
         ? '<a href="' + esc(it.url) + '" target="_blank" rel="noopener noreferrer">' + esc(it.name || it.url) + '</a>'
@@ -466,20 +384,19 @@
       var meta = (note ? '<small class="pr-note-line" title="' + esc(note) + '">' + esc(note) + '</small>' : '')
         + (raw ? '<small class="pr-url-line" title="' + esc(raw) + '">' + esc(raw) + '</small>' : '');
       return '<tr>'
-        + '<td class="pr-date">' + esc(it.added_at) + '</td>'
+        + '<td class="pr-no">' + (i + 1) + '</td>'
+        + '<td class="pr-date">' + esc(it.added_at || '—') + '</td>'
         + '<td class="pr-name">' + link + meta + '</td>'
         + '<td><span class="pr-tag">' + esc(it.category || '未分类') + '</span></td>'
         + '<td class="pr-summary"><p>' + esc(it.summary || '—') + '</p></td>'
         + '<td><span class="pr-open ' + tone + '">' + esc(it.openness || '未标注') + '</span></td>'
         + '<td class="pr-stars">' + num(it.stars) + '</td>'
-        + '<td><button class="pr-rowbtn" type="button" data-pr-edit="' + esc(it.id) + '">编辑</button> '
-        + '<button class="pr-rowbtn danger" type="button" data-pr-del="' + esc(it.id) + '">删除</button></td>'
         + '</tr>';
     }).join('');
   }
 
-  /* ---------- 视图切换（我的库 / 热点榜） ----------
-     只切可见性 + 按钮态：两个视图各自的数据源独立（库=云表，榜=静态 JSON），
+  /* ---------- 视图切换（收录项目 / 热点榜） ----------
+     只切可见性 + 按钮态：两个视图各自的数据源独立（表=云库，榜=静态 JSON），
      互相不重绘，切换是零成本的。计数直接写在按钮上，扫一眼就知道各有多少。 */
   function renderView() {
     if (!root) return;
@@ -495,18 +412,22 @@
       btns[j].className = 'pr-view-btn' + (k === view ? ' active' : '');
       var u = btns[j].querySelector('u');
       if (u) {
-        u.textContent = (k === 'lib')
+        u.textContent = (k === 'all')
           ? String(items.length)
           : (hot && hot.items ? String(hot.items.length) : '—');
       }
     }
   }
 
-  function render() { renderView(); renderStats(); renderBars(); renderTable(); }
+  /* ⚠️ renderView() 必须在最前面：它负责把 `data-pr-view` 写到根节点上并切 pane 的
+     hidden。漏掉它不会报错、页面也看着正常（默认那个 pane 本来就没带 hidden），
+     但根节点上少了状态标记 —— 验收探针与 CSS 选择器（`.projects-workspace[data-pr-view=…]`）
+     都会失准。2026-10-04 重写时漏过一次，被本地渲染探针抓住。 */
+  function render() { renderView(); renderState(); renderStats(); renderBars(); renderTable(); }
 
-  /* ---------- 热点榜：排名 / 渲染 / 收进 ----------
+  /* ---------- 热点榜：排名 / 渲染 ----------
      榜就该有榜的样子：① 有排名号；② 排序口径写在界面上而不是藏在代码里；
-     ③ 两个口径各自成榜，由用户选。 */
+     ③ 两个口径各自成榜，由用户选；④ 顺便标出"是否已收录"。 */
   var SORT_LABEL = { gain: '升星速度', stars: '总星数' };
 
   function tabBtn(key) {
@@ -528,7 +449,7 @@
     box.setAttribute('data-pr-hot-state', list.length ? 'ready' : (hotErr ? 'error' : 'empty'));
     if (!list.length) {
       box.innerHTML = '<div class="pr-hot-empty">'
-        + (hotErr ? '热点数据没读到（' + esc(hotErr) + '）。不影响个人库的使用。'
+        + (hotErr ? '热点数据没读到（' + esc(hotErr) + '）。不影响收录项目的浏览。'
                   : '热点数据为空。跑 <code>python build/refresh_hot.py</code> 生成。')
         + '</div>';
       return;
@@ -538,11 +459,9 @@
     var head = '<div class="pr-hot-head">'
       + '<div><small>TRENDING ON GITHUB</small><b>热点榜</b>'
       + '<em>更新于 ' + esc(hot.updated_at || '—') + ' · 共 ' + list.length + ' 个'
-      + (fresh.length ? ' · 其中 <u>' + fresh.length + '</u> 个尚未收进' : ' · 已全部收进') + '</em></div>'
+      + (fresh.length ? ' · 其中 <u>' + fresh.length + '</u> 个尚未收录' : ' · 已全部收录') + '</em></div>'
       + '<div class="pr-hot-act">'
       + '<div class="pr-rank-tabs" data-pr-rank-tabs>' + tabBtn('gain') + tabBtn('stars') + '</div>'
-      + '<button class="btn sm" type="button" data-pr-adopt-all' + (fresh.length ? '' : ' disabled') + '>'
-      + '全部收进' + (fresh.length ? '（' + fresh.length + '）' : '') + '</button>'
       + '</div></div>';
 
     var body = '<div class="pr-hot-grid">' + ranked.map(function (h, i) {
@@ -564,9 +483,9 @@
         + '<p class="pr-hot-sum">' + esc(h.summary || '（无简介）') + '</p>'
         + (h.biz ? '<p class="pr-hot-biz"><b>商业价值</b>' + esc(h.biz) + '</p>' : '')
         + '<div class="pr-hot-foot">'
-        + (owned
-          ? '<span class="pr-owned">✓ 已在个人库</span>'
-          : '<button class="pr-rowbtn" type="button" data-pr-adopt="' + (list.indexOf(h)) + '">收进我的库</button>')
+        /* 只显示状态，不给按钮 —— 这个页面是只读展示，收进由运维侧定时任务负责 */
+        + (owned ? '<span class="pr-owned">✓ 已收录</span>'
+                 : '<span class="pr-unowned">待收录</span>')
         + '</div></article>';
     }).join('') + '</div>';
 
@@ -578,37 +497,6 @@
       + ' 排名每天随上游榜单变化。</p>';
   }
 
-  // 收进：按 depKey 去重（与 Excel 导入同一口径），已存在则跳过。
-  // 云端写入 —— 先写成功再刷新本地，不做乐观更新（这个模块写入频率低，
-  // 省掉"回滚"那套状态机，代价只是几百毫秒的等待，换来的是界面永远不会骗人）。
-  function adopt(list) {
-    var owned = {};
-    items.forEach(function (it) { owned[depKey(it)] = 1; });
-    var fresh = [], skip = 0;
-    list.forEach(function (h) {
-      var row = normalize(hotToRow(h));
-      var k = depKey(row);
-      if (!k || owned[k]) { skip++; return; }
-      owned[k] = 1;
-      fresh.push(row);
-    });
-    if (!fresh.length) { toast('这些都已经在你的库里了。'); return; }
-
-    setSync('loading', '正在写入云端…');
-    insertRows(fresh).then(function (r) {
-      assertWrote(r, '收进我的库');
-      return load();
-    }).then(function () {
-      if (loadErr) throw new Error(loadErr);
-      setSync('ready', '已同步到云端 · ' + items.length + ' 个项目');
-      render(); renderHot();
-      toast('已收进 ' + fresh.length + ' 个' + (skip ? '，跳过 ' + skip + ' 个已在库的' : '') + '。');
-    }).catch(function (e) {
-      setSync('error', '写入失败');
-      toast('收进失败：' + dbErr(e));
-    });
-  }
-
   function fetchHot() {
     if (typeof global.fetch !== 'function') { hot = { updated_at: '', items: [] }; hotErr = '浏览器不支持 fetch'; renderHot(); return; }
     global.fetch(HOT_URL, { cache: 'no-store' }).then(function (r) {
@@ -616,6 +504,7 @@
       return r.json();
     }).then(function (j) {
       var arr = (j && Array.isArray(j.items)) ? j.items : [];
+      // 先按综合热度排一遍：hotRank() 是稳定排序，主键相等时就会落到这个顺序上
       arr = arr.filter(function (h) { return h && (h.url || h.name); })
                .sort(function (a, b) { return hotHeat(b) - hotHeat(a); });
       hot = { updated_at: (j && j.updated_at) || '', items: arr };
@@ -631,123 +520,9 @@
     });
   }
 
-  /* ---------- 编辑 ---------- */
-  function openEditor(id) {
-    editingId = id || null;
-    var it = id ? items.filter(function (x) { return x.id === id; })[0] : null;
-    var dlg = $('[data-pr-dialog]');
-    $('[data-pr-dlg-title]').textContent = it ? '编辑项目' : '新增项目';
-    $('[data-pr-f-name]').value = it ? it.name : '';
-    $('[data-pr-f-url]').value = it ? it.url : '';
-    $('[data-pr-f-date]').value = (it && it.added_at) || today();
-    $('[data-pr-f-stars]').value = it ? it.stars : '';
-    $('[data-pr-f-summary]').value = it ? it.summary : '';
-    $('[data-pr-f-note]').value = it ? it.note : '';
-    $('[data-pr-f-cat]').value = (it && it.category) || CATS[0];
-    $('[data-pr-f-open]').value = (it && it.openness) || OPEN[0];
-    if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
-  }
-
-  function submitEditor() {
-    var name = $('[data-pr-f-name]').value.trim();
-    var url = $('[data-pr-f-url]').value.trim();
-    if (!name && !url) { toast('请至少填写项目名称或仓库地址。'); return; }
-    var patch = {
-      added_at: toDate($('[data-pr-f-date]').value) || today(),
-      name: name,
-      url: url,
-      category: $('[data-pr-f-cat]').value.trim() || '其他',
-      summary: $('[data-pr-f-summary]').value.trim(),
-      openness: $('[data-pr-f-open]').value.trim(),
-      stars: toStars($('[data-pr-f-stars]').value),
-      note: $('[data-pr-f-note]').value.trim()
-    };
-    var editing = editingId;
-    var row = normalize(Object.assign({ id: editing || uid() }, patch));
-    var btn = $('[data-pr-save]');
-    if (btn) btn.disabled = true;
-    setSync('loading', editing ? '正在保存…' : '正在入库…');
-
-    (editing ? updateRow(editing, row) : insertRows([row]))
-      .then(function (r) {
-        assertWrote(r, editing ? '保存' : '入库');
-        return load();
-      })
-      .then(function () {
-        if (loadErr) throw new Error(loadErr);
-        closeEditor();
-        syncReady();
-        render();
-        toast(editing ? '已更新。' : '已入库。');
-      })
-      .catch(function (e) {
-        setSync('error', '写入失败');
-        toast('保存失败：' + dbErr(e));
-      })
-      .then(function () { if (btn) btn.disabled = false; });
-  }
-
-  function closeEditor() {
-    editingId = null;
-    var dlg = $('[data-pr-dialog]');
-    if (typeof dlg.close === 'function') dlg.close(); else dlg.removeAttribute('open');
-  }
-
-  function removeItem(id) {
-    var it = items.filter(function (x) { return x.id === id; })[0];
-    if (!it) return;
-    if (!global.confirm('删除「' + (it.name || it.url) + '」？此操作不可撤销。')) return;
-    setSync('loading', '正在删除…');
-    deleteRow(id).then(function (r) {
-      assertWrote(r, '删除');
-      return load();
-    }).then(function () {
-      if (loadErr) throw new Error(loadErr);
-      syncReady(); render();
-      toast('已删除。');
-    }).catch(function (e) {
-      setSync('error', '删除失败');
-      toast('删除失败：' + dbErr(e));
-    });
-  }
-
-  /* ---------- 同步状态条 ----------
-     让"数据在云端"这件事在界面上可见：读写中 / 已同步 / 失败。
-     同时它也是**验收锚点** —— 探针靠 [data-pr-sync-state] 等异步落定，
-     固定 sleep 会读到中间态（本项目在热点推荐上已经吃过一次假红）。 */
-  function setSync(state, text) {
-    var el = $('[data-pr-sync]');
-    if (!el) return;
-    el.setAttribute('data-pr-sync-state', state);
-    el.textContent = text;
-    el.className = 'pr-sync ' + state;
-  }
-
-  function syncReady() {
-    setSync(items.length ? 'ready' : 'empty',
-      items.length ? ('已同步到云端 · ' + items.length + ' 个项目') : '云端暂无数据，新增即自动保存');
-  }
-
-  function toast(text) {
-    /* ★★ 必须用 `typeof ... === 'function'` 判，不能写成 `if (global.X)`：
-       页面里存在 `<div class="toast" id="toast">`，浏览器会把带 id 的元素自动挂成
-       同名全局变量 ⇒ `global.toast` 恒为真，但它是个 **DOM 元素不是函数**，
-       调用即 "global.toast is not a function"。
-       而这个 toast 大量出现在 .then 链里，一抛就把整条链打断 ——
-       症状极具迷惑性：**数据其实已经写进服务端了，界面却停在旧状态**
-       （2026-10-03 实测：?fresh=1 搬迁成功 14 条，界面仍是"项目库还是空的"）。
-       所以：① 类型判；② 优先用 app.js 暴露的 window.FluxToast（样式统一）。 */
-    if (typeof global.FluxToast === 'function') { global.FluxToast(text); return; }
-    if (typeof global.toast === 'function') { global.toast('info', text); return; }
-    var el = $('[data-pr-toast]');
-    if (!el) return;                      // 兜底路径也不能因为缺元素就抛
-    el.textContent = text;
-    el.classList.add('on');
-    clearTimeout(toast.t);
-    toast.t = setTimeout(function () { el.classList.remove('on'); }, 2600);
-  }
-
-  /* ---------- Excel ---------- */
+  /* ---------- Excel 导出 ----------
+     ⚠️ 导出的是 COLS 那 8 列（与历史 Excel 模板逐列一致），不是页面上的 7 列。
+        页面列是给人看的，导出列是给下游表格吃的 —— 两套列不是一回事，别互相改。 */
   function colWidths() {
     return COLS.map(function (c) { return { wch: c.k === 'summary' ? 52 : (c.k === 'note' ? 26 : 15) }; });
   }
@@ -761,115 +536,32 @@
 
   function fileName(ext) {
     var d = new Date(), z = function (n) { return String(n).padStart(2, '0'); };
-    return 'FluxDesk_项目库_' + d.getFullYear() + z(d.getMonth() + 1) + z(d.getDate()) + '.' + ext;
+    return 'FluxDesk_收录项目_' + d.getFullYear() + z(d.getMonth() + 1) + z(d.getDate()) + '.' + ext;
   }
 
   function exportXlsx(rows, label) {
     rows = rows || visible();
     if (!rows.length) { toast('当前没有可导出的项目。'); return; }
     var wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, sheetFromRows(rows), '项目库');
+    XLSX.utils.book_append_sheet(wb, sheetFromRows(rows), '收录项目');
     XLSX.writeFile(wb, fileName('xlsx'));
     toast('已导出' + (label ? label + ' ' : '') + rows.length + ' 个项目。');
   }
 
-  function downloadTemplate() {
-    var wb = XLSX.utils.book_new();
-
-    var demo = [
-      { added_at: today(), name: 'openai/whisper', url: 'https://github.com/openai/whisper',
-        category: 'AI / LLM', summary: '通用语音识别模型，多语种、鲁棒性好，适合做会议与录音转写。',
-        openness: '完全开源', stars: 74000, note: '示例行，导入前请删除' },
-      { added_at: today(), name: 'obsidianmd/obsidian-releases', url: 'https://github.com/obsidianmd/obsidian-releases',
-        category: '文档知识库', summary: '本地优先的双链笔记工具，插件生态丰富，适合搭建个人知识库。',
-        openness: '源码可见', stars: 9200, note: '示例行，导入前请删除' }
-    ];
-    var ws = sheetFromRows(demo);
-    ws['!rows'] = [{}, { hpt: 30 }, { hpt: 30 }];
-    XLSX.utils.book_append_sheet(wb, ws, '项目库');
-
-    var help = [
-      ['字段', '是否必填', '填写说明'],
-      ['入库日期', '建议', '格式 YYYY-MM-DD，例如 2026-10-03。留空则按导入当天计。'],
-      ['项目名称', '至少填一项', '建议用「作者/仓库名」，例如 openai/whisper。'],
-      ['仓库地址', '至少填一项', '完整的 GitHub 链接。导入时以此列去重：地址相同则更新原记录。'],
-      ['项目类别', '建议', '参考取值：' + CATS.join('、') + '。也可自行填写新类别。'],
-      ['项目简介', '建议', '一两句话说清「它是干什么的、好在哪」，便于日后检索。'],
-      ['开源程度', '建议', '参考取值：' + OPEN.join('、') + '。'],
-      ['Star 数', '建议', '只填数字，不要带逗号或「k」。记录的是截至入库时的快照。'],
-      ['备注', '选填', '你自己的使用心得、待办、关联项目等。'],
-      ['', '', ''],
-      ['导入规则', '', '按「仓库地址」去重（无地址时按项目名称）。已存在的记录会被覆盖更新，其余追加。'],
-      ['导出规则', '', '导出的是「当前筛选结果」，不是全量。想导全量请先点重置。']
-    ];
-    var wsHelp = XLSX.utils.aoa_to_sheet(help);
-    wsHelp['!cols'] = [{ wch: 14 }, { wch: 14 }, { wch: 78 }];
-    XLSX.utils.book_append_sheet(wb, wsHelp, '填写说明');
-
-    XLSX.writeFile(wb, 'FluxDesk_项目库_模板.xlsx');
-    toast('模板已下载，填好后用「导入 Excel」送回。');
-  }
-
-  function importXlsx(file) {
-    var reader = new FileReader();
-    reader.onload = function (e) {
-      var wb;
-      try { wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true }); }
-      catch (err) { toast('这个文件读不出来，确认是 .xlsx 或 .csv。'); return; }
-      var name = wb.SheetNames.indexOf('项目库') >= 0 ? '项目库' : wb.SheetNames[0];
-      var rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '', raw: true });
-      if (!rows.length) { toast('没有读到数据行（第一行需要是表头）。'); return; }
-
-      var toInsert = [], toUpdate = [], skipped = 0;
-      var index = {};
-      items.forEach(function (it) { index[(it.url || it.name).toLowerCase()] = it; });
-
-      rows.forEach(function (raw) {
-        var it = rowFromExcel(raw);
-        var key = (it.url || it.name).toLowerCase();
-        if (!key || key === '示例行') { skipped++; return; }
-        if (!it.added_at) it.added_at = today();
-        var hit = index[key];
-        if (hit) {
-          // 已存在：沿用原 id（upsert 的锚点）与原有备注；缺字段的用新值补
-          var merged = normalize(Object.assign({}, hit, it, { id: hit.id }));
-          index[key] = merged;
-          toUpdate.push(merged);
-        } else {
-          var fresh = normalize(it);
-          index[key] = fresh;
-          toInsert.push(fresh);
-        }
-      });
-
-      if (!toInsert.length && !toUpdate.length) { toast('没有读到可导入的数据行。'); return; }
-
-      setSync('loading', '正在写入云端…');
-      var chain = Promise.resolve();
-      if (toInsert.length) {
-        chain = chain.then(function () { return insertRows(toInsert); })
-                     .then(function (r) { assertWrote(r, '导入'); });
-      }
-      if (toUpdate.length) {
-        chain = chain.then(function () { return upsertRows(toUpdate); })
-                     .then(function (r) { assertWrote(r, '导入更新'); });
-      }
-      chain.then(function () { return load(); })
-        .then(function () {
-          if (loadErr) throw new Error(loadErr);
-          syncReady(); render(); resetFilterInputs();
-          var msg = '导入完成：新增 ' + toInsert.length + ' 条';
-          if (toUpdate.length) msg += '，更新 ' + toUpdate.length + ' 条';
-          if (skipped) msg += '，跳过 ' + skipped + ' 行空行/标题行';
-          toast(msg + '。');
-        })
-        .catch(function (e) {
-          setSync('error', '导入失败');
-          toast('导入失败：' + dbErr(e));
-        });
-    };
-    reader.onerror = function () { toast('文件读取失败，重试一次。'); };
-    reader.readAsArrayBuffer(file);
+  function toast(text) {
+    /* ★★ 必须用 `typeof ... === 'function'` 判，不能写成 `if (global.X)`：
+       页面里存在 `<div class="toast" id="toast">`，浏览器会把带 id 的元素自动挂成
+       同名全局变量 ⇒ `global.toast` 恒为真，但它是个 **DOM 元素不是函数**，
+       调用即 "global.toast is not a function"。
+       所以：① 类型判；② 优先用 app.js 暴露的 window.FluxToast（样式统一）。 */
+    if (typeof global.FluxToast === 'function') { global.FluxToast(text); return; }
+    if (typeof global.toast === 'function') { global.toast('info', text); return; }
+    var el = $('[data-pr-toast]');
+    if (!el) return;                      // 兜底路径也不能因为缺元素就抛
+    el.textContent = text;
+    el.classList.add('on');
+    clearTimeout(toast.t);
+    toast.t = setTimeout(function () { el.classList.remove('on'); }, 2600);
   }
 
   /* ---------- 筛选控件 ---------- */
@@ -902,24 +594,22 @@
   function skeleton() {
     return ''
       + '<div class="pr-heading">'
-      + '<div><small>GITHUB PROJECT LIBRARY · 仅管理员</small><h1>GitHub 项目收藏</h1>'
+      + '<div><small>GITHUB COLLECTION · 公开</small><h1>收录项目</h1>'
       + '<p>把收集到的开源项目建档、归类、筛选，随时导出成 Excel 归档或带走。'
-      + '数据保存在云端，换设备打开也在。</p>'
-      + '<div class="pr-sync" data-pr-sync data-pr-sync-state="loading">正在从云端读取…</div></div>'
+      + '内容全站公开，无需登录即可查看。</p>'
+      + '<div class="pr-state" data-pr-state="loading">正在读取…</div></div>'
       + '<div class="pr-actions">'
-      + '<button class="btn primary" type="button" data-pr-new>新增项目</button>'
-      + '<button class="btn" type="button" data-pr-tpl>下载模板</button>'
-      + '<button class="btn" type="button" data-pr-import>导入 Excel</button>'
+      + '<button class="btn" type="button" data-pr-refresh>刷新数据</button>'
       + '</div></div>'
-      /* 视图切换：两个按钮，计数写在按钮上。默认「我的库」——
-         这才是这个模块的主视图（改之前热点卡片压在库表格上方，还得先滚过去）。 */
+      /* 视图切换：两个按钮，计数写在按钮上。默认「收录项目」——
+         这才是这个模块的主视图（热点榜是每天变化的行情面）。 */
       + '<div class="pr-views" role="tablist">'
-      + '<button class="pr-view-btn active" type="button" data-pr-view="lib" role="tab">'
-      + '<span class="nav-glyph">▤</span>我的库 <u>0</u></button>'
+      + '<button class="pr-view-btn active" type="button" data-pr-view="all" role="tab">'
+      + '<span class="nav-glyph">▤</span>收录项目 <u>0</u></button>'
       + '<button class="pr-view-btn" type="button" data-pr-view="hot" role="tab">'
       + '<span class="nav-glyph">★</span>热点榜 <u>—</u></button>'
       + '</div>'
-      + '<section class="pr-pane" data-pr-pane="lib">'
+      + '<section class="pr-pane" data-pr-pane="all">'
       + '<section class="pr-stats" data-pr-stats></section>'
       + '<div class="pr-panel">'
       + '<div class="pr-bars" data-pr-bars></div>'
@@ -933,52 +623,30 @@
       + '<button class="pr-reset" type="button" data-pr-reset>重置</button>'
       + '</div>'
       + '<div class="pr-scroll"><table class="pr-table">'
-      + '<colgroup><col class="c-date"/><col class="c-name"/><col class="c-cat"/><col class="c-sum"/>'
-      + '<col class="c-open"/><col class="c-star"/><col class="c-act"/></colgroup>'
+      + '<colgroup><col class="c-no"/><col class="c-date"/><col class="c-name"/><col class="c-cat"/>'
+      + '<col class="c-sum"/><col class="c-open"/><col class="c-star"/></colgroup>'
       + '<thead><tr>'
-      + '<th>入库日期</th><th>项目</th><th>类别</th><th>项目简介</th><th>开源程度</th><th style="text-align:right">Star</th><th>操作</th>'
+      + '<th>#</th><th>入库日期</th><th>项目</th><th>类别</th><th>项目简介</th><th>开源程度</th>'
+      + '<th style="text-align:right">Star</th>'
       + '</tr></thead><tbody data-pr-body></tbody></table></div>'
       /* 计数 + 导出条同一行：导的是"当前筛选"还是"全部"，按钮上直接写明条数 */
       + '<div class="pr-toolbar"><p class="pr-note" data-pr-count></p>'
       + '<div class="pr-toolbar-act" data-pr-export-row></div></div>'
       + '</div>'
-      + '<p class="pr-note">数据保存在服务端（仅管理员可见），来源是手工录入或 Excel 导入。换设备或换浏览器登录，看到的是同一份库。</p>'
+      + '<p class="pr-note">数据保存在云数据库，读权限对所有人开放（含未登录访客），'
+      + '由运维侧的定时任务更新。列表按最近更新时间倒序排列，即"更新顺序"。</p>'
       + '</section>'
       + '<section class="pr-pane" data-pr-pane="hot" hidden>'
       + '<section class="pr-hot" data-pr-hot></section>'
       + '</section>'
-      + '<div class="pr-note" data-pr-toast style="position:fixed;left:50%;bottom:28px;transform:translateX(-50%);padding:10px 18px;border:1px solid var(--border2);border-radius:10px;background:var(--panel2);color:var(--text);opacity:0;pointer-events:none;transition:opacity .2s"></div>'
-      + '<dialog class="pr-dialog" data-pr-dialog>'
-      + '<div class="pr-dlg-head"><h2 data-pr-dlg-title>新增项目</h2>'
-      + '<button class="pr-rowbtn" type="button" data-pr-cancel>关闭</button></div>'
-      + '<div class="pr-dlg-body">'
-      + '<div class="pr-field wide"><label for="prFName">项目名称</label><input id="prFName" data-pr-f-name maxlength="120" placeholder="作者/仓库名，例如 openai/whisper"></div>'
-      + '<div class="pr-field wide"><label for="prFUrl">仓库地址</label><input id="prFUrl" data-pr-f-url maxlength="300" placeholder="https://github.com/..."></div>'
-      + '<div class="pr-field"><label for="prFDate">入库日期</label><input id="prFDate" type="date" data-pr-f-date></div>'
-      + '<div class="pr-field"><label for="prFStars">Star 数（入库时）</label><input id="prFStars" type="number" min="0" step="100" data-pr-f-stars placeholder="0"></div>'
-      + '<div class="pr-field"><label for="prFCat">项目类别</label><select id="prFCat" data-pr-f-cat>' + options(CATS, '—') + '</select></div>'
-      + '<div class="pr-field"><label for="prFOpen">开源程度</label><select id="prFOpen" data-pr-f-open>' + options(OPEN, '—') + '</select></div>'
-      + '<div class="pr-field wide"><label for="prFSummary">项目简介</label><textarea id="prFSummary" data-pr-f-summary maxlength="400" placeholder="它是干什么的、好在哪"></textarea></div>'
-      + '<div class="pr-field wide"><label for="prFNote">备注</label><input id="prFNote" data-pr-f-note maxlength="200" placeholder="使用心得、待办、关联项目"></div>'
-      + '</div>'
-      + '<div class="pr-dlg-foot"><button class="btn" type="button" data-pr-cancel>取消</button>'
-      + '<button class="btn primary" type="button" data-pr-save>保存</button></div>'
-      + '</dialog>'
-      + '<input type="file" accept=".xlsx,.xls,.csv" data-pr-file hidden>';
+      + '<div class="pr-note" data-pr-toast style="position:fixed;left:50%;bottom:28px;transform:translateX(-50%);padding:10px 18px;border:1px solid var(--border2);border-radius:10px;background:var(--panel2);color:var(--text);opacity:0;pointer-events:none;transition:opacity .2s"></div>';
   }
 
   /* ---------- 事件（全部委托在 root 上，重绘不用重绑） ---------- */
   function onClick(e) {
-    var t = e.target.closest('[data-pr-new],[data-pr-tpl],[data-pr-import],[data-pr-export],'
-      + '[data-pr-export-all],[data-pr-reset],[data-pr-edit],[data-pr-del],[data-pr-save],'
-      + '[data-pr-cancel],[data-pr-bar],[data-pr-view],[data-pr-sort],'
-      + '[data-pr-adopt],[data-pr-adopt-all]');
+    var t = e.target.closest('[data-pr-refresh],[data-pr-export],[data-pr-export-all],'
+      + '[data-pr-reset],[data-pr-bar],[data-pr-view],[data-pr-sort]');
     if (!t) return;
-    if (t.hasAttribute('data-pr-adopt')) {
-      var one = (hot && hot.items) ? hot.items[Number(t.getAttribute('data-pr-adopt'))] : null;
-      return one ? adopt([one]) : undefined;
-    }
-    if (t.hasAttribute('data-pr-adopt-all')) return adopt(hotFresh(hot && hot.items, items));
     if (t.hasAttribute('data-pr-view')) {
       var v = t.getAttribute('data-pr-view');
       if (VIEWS.indexOf(v) >= 0) { view = v; renderView(); }
@@ -989,16 +657,10 @@
       if (SORT_LABEL[s]) { hotSort = s; renderHot(); }
       return;
     }
+    if (t.hasAttribute('data-pr-refresh')) return refresh();
     if (t.hasAttribute('data-pr-export-all')) return exportXlsx(sortRows(items), '全部');
-    if (t.hasAttribute('data-pr-new')) return openEditor(null);
-    if (t.hasAttribute('data-pr-tpl')) return downloadTemplate();
-    if (t.hasAttribute('data-pr-import')) return $('[data-pr-file]').click();
     if (t.hasAttribute('data-pr-export')) return exportXlsx();
-    if (t.hasAttribute('data-pr-save')) return submitEditor();
-    if (t.hasAttribute('data-pr-cancel')) return closeEditor();
     if (t.hasAttribute('data-pr-reset')) { resetFilterInputs(); return render(); }
-    if (t.hasAttribute('data-pr-edit')) return openEditor(t.getAttribute('data-pr-edit'));
-    if (t.hasAttribute('data-pr-del')) return removeItem(t.getAttribute('data-pr-del'));
     if (t.hasAttribute('data-pr-bar')) {
       var k = t.getAttribute('data-pr-bar');
       f.cat = f.cat === k ? '' : k;
@@ -1010,56 +672,59 @@
   function onFilter() { readFilters(); render(); }
 
   function onChange(e) {
-    if (e.target.hasAttribute && e.target.hasAttribute('data-pr-file')) {
-      var file = e.target.files && e.target.files[0];
-      e.target.value = '';
-      if (file) importXlsx(file);
-      return;
-    }
     if (e.target.closest && e.target.closest('.pr-filters')) onFilter();
   }
 
-  function onKey(e) {
-    if (e.key === 'Enter' && e.target.closest && e.target.closest('[data-pr-dialog]')
-        && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); submitEditor(); }
+  /* ---------- 生命周期 ---------- */
+  function refresh() {
+    var btn = $('[data-pr-refresh]');
+    if (btn) btn.disabled = true;
+    fetchHot();
+    /* 顺序与 open() 一致：先 load()（内部 pending++），再写状态位 ——
+       否则 setState('loading') 会被随后的 render() 用 empty 覆盖回去。 */
+    var p = load();
+    setState('loading');
+    p.then(function () {
+      render();
+      if (loadErr) toast('读取失败：' + loadErr);
+      if (btn) btn.disabled = false;
+    });
   }
 
-  /* ---------- 生命周期 ---------- */
-  function open(node, userId) {
+  function setState(state) {
+    var el = $('[data-pr-state]');
+    if (!el) return;
+    el.setAttribute('data-pr-state', state);
+    el.className = 'pr-state ' + state;
+    el.textContent = state === 'loading' ? '正在读取…' : el.textContent;
+  }
+
+  function open(node) {
     if (active) close();
     root = node;
-    user = userId || '';
     active = true;
     root.innerHTML = skeleton();
     resetFilterInputs();
     items = [];
-    hot = null;        // 每次重开都重新拉热点（榜单每天变），热点自身有模块内缓存
+    hot = null;        // 每次重开都重新拉热点（榜单每天变）
     loadErr = '';
-    view = 'lib';      // 每次打开都落在「我的库」——收录的东西不该被热点挡在后面
+    view = 'all';      // 每次打开都落在「收录项目」——展示页的主角是收录内容
     hotSort = 'gain';
-    setSync('loading', '正在从云端读取…');
-    render();          // 先铺骨架与空态，别让用户对着白屏等
+    /* ⚠️ 顺序不能反：先 load()（内部 pending++ 落在微任务之前），再 render()。
+       反过来的话首帧状态位会是 empty 而不是 loading（renderState 注释里有完整踩坑记录）。 */
+    var p = load();
+    render();          // 先铺骨架，别让用户对着白屏等
     renderHot();
     fetchHot();
 
-    load().then(function () {
-      // 只有云端为空时才考虑搬迁本地旧数据 —— 免得把一份陈旧副本盖到云端
-      if (items.length) return 0;
-      return migrateLocal();
-    }).then(function (moved) {
-      if (!moved) return;
-      return load().then(function () {
-        toast('已把本地保存的 ' + moved + ' 个项目搬迁到云端。');
-      });
-    }).then(function () {
-      if (loadErr) setSync('error', loadErr); else syncReady();
+    p.then(function () {
       render();
+      if (loadErr) toast('读取失败：' + loadErr);
     });
 
     root.addEventListener('click', onClick);
     root.addEventListener('input', onFilter);
     root.addEventListener('change', onChange);
-    root.addEventListener('keydown', onKey);
   }
 
   function close() {
@@ -1068,7 +733,6 @@
     root.removeEventListener('click', onClick);
     root.removeEventListener('input', onFilter);
     root.removeEventListener('change', onChange);
-    root.removeEventListener('keydown', onKey);
     root.innerHTML = '';
     root = null;
     items = [];

@@ -18,6 +18,18 @@
     endpoint: PUBLIC_CONFIG.endpoint,
     publishableKey: PUBLIC_CONFIG.publishableKey
   });
+  /* ★ 必须把实例挂到 window 上，内嵌模块（build/projects.js）才拿得到。
+     ————————————————————————————————————————————————————————————————
+     2026-10-04 修的是一个**长期存在的线上 bug**：projects.js 的 api() 读的是
+     `global.cloud`，而 app.js 的 cloud 只是个模块内变量，SDK 也只暴露
+     `WorkBuddyCloud`（没有 window.cloud）。于是「收录项目」页永远停在
+     dbErr() 的"云服务未就绪"、一条数据都渲染不出来 —— 而**界面看起来完全正常**
+     （它照常画骨架、画筛选器、画空态），所以没人怀疑是数据通道断了。
+     为什么之前没被发现：本地验收用的是注入的假 SDK，注入点恰恰就是 window.cloud，
+     等于把真机上缺失的那一环补上了。教训 —— 验收探针不能替被测代码补依赖。
+     ⚠️ 只挂实例，不新建：自己再 create 一个会多出一份会话状态
+        （token 刷新、登出、心跳）彼此不同步。 */
+  window.cloud = cloud;
 
   /* ---------- 状态 ---------- */
   var S = {
@@ -664,17 +676,17 @@
     hide('viewAuth'); show('viewGate');
   }
 
-  /* 营运方独占的导航入口统一在这里收口。
-     ⚠️ 这只是**体验**上的隐藏 —— 真正的门在数据库：运营台受 access_grants 的策略保护，
-     GitHub 项目收藏整张表由 projects_operator_all 收死（见 migrations/003_projects.sql）。
-     前端藏不藏不影响安全，但一定要藏，否则普通用户会点进一个必然报错的页面。 */
+  /* 需要按身份显隐的导航入口统一在这里收口。
+     ⚠️ 这里**只剩运营台**一项 —— 「收录项目」（tabProjects）2026-10-04 起对
+     所有用户可见，它已经是一个公开的展示页，不再属于运营方独占。
+     ⚠️ 隐藏只是**体验** —— 真正的门在数据库：运营台受 access_grants 的策略保护。
+        收录项目的读是公开的（迁移 004 的 projects_public_read），
+        写仍由 projects_operator_all 收死成"仅运营方"，而前端已经没有写入口了。 */
   function applyOperatorNav() {
-    ['tabAdmin', 'tabProjects'].forEach(function (id) {
-      var b = $(id);
-      if (b) b.classList.toggle('hidden', !S.isOperator);
-    });
+    var b = $('tabAdmin');
+    if (b) b.classList.toggle('hidden', !S.isOperator);
     // 身份可能中途变化（退出登录 / 被移出名单）——正停在独占页上就退回总览
-    if (!S.isOperator && (curTab === 'admin' || curTab === 'projects')) switchTab('dash');
+    if (!S.isOperator && curTab === 'admin') switchTab('dash');
   }
 
   async function refreshOperator() {
@@ -866,13 +878,10 @@
   var curTab = '';
 
   function switchTab(name) {
-    // 运营方独占页的兜底闸门：导航项对非运营方已隐藏，这里再挡一次，
-    // 防的是有人直接调 switchTab('projects') 或深链进来 —— 界面不该出现必然报错的页面。
-    // 真正的权限仍在数据库（projects 表的 RLS），这里只是别让用户白跑一趟。
-    if (name === 'projects' && !S.isOperator) {
-      toast('err', 'GitHub 项目收藏仅管理员可用');
-      name = 'dash';
-    }
+    // ⚠️ 「收录项目」（projects）**不再有身份闸门**：2026-10-04 起它是全站公开的
+    // 只读展示页，读权限由迁移 004 的 projects_public_read 对 anon+authenticated 全开。
+    // 曾经的 `if (name === 'projects' && !S.isOperator) → 退回总览` 已删除，
+    // 留着会让非运营方用户被莫名踢回总览页。
     closeNotifs();
     var was = curTab;
     curTab = name;
@@ -884,7 +893,7 @@
     document.querySelectorAll('.app-tab').forEach(function (b) {
       b.classList.toggle('active', b.getAttribute('data-tab') === name);
     });
-    var titles = { dash: '总览', market: '数据看板', upload: '数据看板 / 数据中心', history: '数据看板 / 历史数据', risk: '实控人风险日志', 'risk-history': '实控人风险日志 / 历史数据', admin: '运营台', futures: '期货工具箱', stocks: '股票工作台', projects: 'GitHub 项目收藏' };
+    var titles = { dash: '总览', market: '数据看板', upload: '数据看板 / 数据中心', history: '数据看板 / 历史数据', risk: '实控人风险日志', 'risk-history': '实控人风险日志 / 历史数据', admin: '运营台', futures: '期货工具箱', stocks: '股票工作台', projects: '收录项目' };
     if ($('workspaceCrumb')) $('workspaceCrumb').textContent = titles[name] || '工作台';
     if (was && was !== name) window.scrollTo(0, 0);
     if (name === 'dash') {
@@ -906,7 +915,7 @@
     else FuturesDesk.close();
     if (name === 'stocks') StocksDesk.open($('stocksRoot'), S.userId);
     else StocksDesk.close();
-    if (name === 'projects') ProjectsDesk.open($('projectsRoot'), S.userId);
+    if (name === 'projects') ProjectsDesk.open($('projectsRoot'));
     else ProjectsDesk.close();
     if (name === 'history') loadDatasets();
     if (name === 'risk' || name === 'risk-history') loadDatasets().then(function () {
