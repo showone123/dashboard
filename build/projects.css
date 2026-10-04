@@ -14,6 +14,22 @@
 .pr-sync[data-pr-sync-state="error"]{color:#ff7a8a;border-color:color-mix(in srgb,#ff7a8a 38%,var(--border2))}
 @keyframes prSyncPulse{0%,100%{opacity:.25}50%{opacity:1}}
 .pr-actions{display:flex;gap:8px;flex-wrap:wrap}
+/* ---------- 视图切换（我的库 / 热点榜）----------
+   两个按钮就是两个视图的入口，计数写在按钮里：不用进页面就能知道各有多少条。
+   默认「我的库」是主视图，热点榜是第二入口 —— 收录的东西不该被榜单挡在后面。 */
+.pr-views{display:inline-flex;gap:4px;margin:0 0 18px;padding:4px;border:1px solid var(--border);border-radius:12px;background:color-mix(in srgb,var(--panel) 92%,transparent)}
+.pr-view-btn{display:flex;align-items:center;gap:8px;padding:8px 16px;border:0;border-radius:9px;background:transparent;color:var(--dim);font:600 13px var(--sans);cursor:pointer;white-space:nowrap}
+.pr-view-btn:hover{color:var(--text)}
+.pr-view-btn.active{background:color-mix(in srgb,var(--gold) 15%,transparent);color:var(--text);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--gold) 34%,transparent)}
+.pr-view-btn .nav-glyph{font-size:12px;opacity:.85}
+.pr-view-btn u{text-decoration:none;padding:1px 7px;border-radius:9px;background:color-mix(in srgb,var(--gold) 16%,transparent);color:var(--gold2);font:700 11.5px var(--number)}
+.pr-pane[hidden]{display:none!important}
+/* 热点视图里藏掉库的三个动作按钮（新增/模板/导入都是库的操作，跟榜单无关） */
+.projects-workspace[data-pr-view="hot"] .pr-actions{display:none}
+/* 计数 + 导出按钮同一行：导的是"当前筛选"还是"全部"，条数直接写在按钮上 */
+.pr-toolbar{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;padding:0 18px}
+.pr-toolbar .pr-note{margin:14px 0}
+.pr-toolbar-act{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .pr-panel{border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--panel) 92%,transparent);box-shadow:0 14px 38px rgba(3,8,20,.06)}
 .pr-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);border-radius:16px;overflow:hidden;margin-bottom:16px}
 .pr-stat{padding:16px 18px;background:color-mix(in srgb,var(--panel) 92%,transparent)}
@@ -42,12 +58,21 @@
 .pr-table col.c-open{width:10%}.pr-table col.c-star{width:78px}.pr-table col.c-act{width:116px}
 .pr-table th{position:sticky;top:0;z-index:1;padding:11px 14px;background:var(--panel2);border-bottom:1px solid var(--border2);color:var(--dim);font-size:11px;font-weight:700;letter-spacing:.5px;text-align:left;white-space:nowrap}
 .pr-table td{padding:11px 14px;border-bottom:1px solid color-mix(in srgb,var(--border) 55%,transparent);vertical-align:top;overflow-wrap:break-word}
+/* ★ theme.css 里有一条全局 `th,td{white-space:nowrap}` —— 它会被**继承**到单元格内部的
+   段落上，于是简介/项目名这类长文本根本不换行，直接横向溢出到隔壁列。
+   表现很隐蔽：单元格本身不报错、表格也不出横向滚动条，只是文字压在了下一列上
+   （2026-10-04 由本地渲染探针量出来：简介格 scrollWidth 489 > clientWidth 400）。
+   所以长文本的格子必须显式改回 normal；日期/星数/标签这些短内容保持 nowrap。 */
+.pr-table td.pr-summary,.pr-table td.pr-name{white-space:normal}
+.pr-summary a{white-space:normal}
 .pr-table tr:hover td{background:color-mix(in srgb,var(--panel2) 45%,transparent)}
 .pr-date{font:12px var(--mono);color:var(--dim);white-space:nowrap}
 .pr-name{font-weight:700;overflow-wrap:anywhere}
 .pr-name a{color:var(--gold2);text-decoration:none}
 .pr-name a:hover{text-decoration:underline}
-.pr-name small{display:block;margin-top:3px;color:var(--dim2);font:10px var(--mono);font-weight:400;word-break:break-all}
+/* 备注/地址各自单行省略：备注里带了「商业价值」长文，铺开会把整张表糊掉 */
+.pr-name small{display:block;margin-top:3px;color:var(--dim2);font:10px var(--mono);font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pr-name small.pr-note-line{color:var(--dim);max-width:100%}
 .pr-summary{color:var(--text);line-height:1.55}
 .pr-summary p{margin:0}
 .pr-tag{display:inline-block;padding:3px 9px;border:1px solid var(--border2);border-radius:12px;font-size:11px;white-space:nowrap}
@@ -90,11 +115,31 @@ html[data-theme="light"] .pr-stat,html[data-theme="light"] .pr-panel{background:
 .pr-hot-head b{display:inline-block;margin:3px 8px 0 0;font-size:15px}
 .pr-hot-head em{font-style:normal;color:var(--dim);font-size:11.5px}
 .pr-hot-head u{color:var(--gold2);text-decoration:none;font-weight:700}
-.pr-hot-act{display:flex;gap:8px;align-items:center;flex-shrink:0}
+.pr-hot-act{display:flex;gap:8px;align-items:center;flex-shrink:0;flex-wrap:wrap}
+/* ---------- 榜单排序 tab + 排名徽标 ----------
+   排行榜必须让人一眼看出"第几名"和"按什么排的"，所以：
+   ① 名次做成徽标；② 排序口径做成 tab，当前口径高亮；③ 折算规则写在榜尾注释里。 */
+.pr-rank-tabs{display:inline-flex;gap:4px;padding:3px;border:1px solid var(--border);border-radius:20px;background:var(--bg)}
+.pr-rank-tab{padding:5px 13px;border:0;border-radius:16px;background:transparent;color:var(--dim);font:600 12px var(--sans);cursor:pointer;white-space:nowrap}
+.pr-rank-tab:hover{color:var(--text)}
+.pr-rank-tab.active{background:color-mix(in srgb,var(--gold) 16%,transparent);color:var(--text)}
+.pr-rank{display:inline-flex;align-items:center;justify-content:center;flex:none;width:24px;height:24px;border-radius:8px;background:var(--panel2);color:var(--dim);font:700 12px var(--number)}
+.pr-rank.hot{background:color-mix(in srgb,var(--gold) 26%,transparent);color:var(--gold2)}
+.pr-gain{color:var(--gold2);font:700 11.5px var(--number)}
+html[data-theme="light"] .pr-gain{color:#8a6200}
+html[data-theme="light"] .pr-rank-tab.active{background:#fdf6e3}
+html[data-theme="light"] .pr-views{background:#fff}
+html[data-theme="light"] .pr-view-btn.active{background:#fdf6e3}
+html[data-theme="light"] .pr-view-btn u{background:#fdf6e3;color:#8a6200}
+html[data-theme="light"] .pr-rank.hot{background:#fdf6e3;color:#8a6200}
 .pr-hot-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(430px,1fr));gap:1px;background:var(--border);border-top:1px solid var(--border)}
 .pr-hot-card{padding:13px 16px;background:color-mix(in srgb,var(--panel) 92%,transparent)}
 .pr-hot-card.owned{opacity:.6}
-.pr-hot-top{display:flex;align-items:center;justify-content:space-between;gap:9px}
+/* 前三名加一道左侧金边：榜单一眼扫下去就知道头部在哪 */
+.pr-hot-card.top{box-shadow:inset 3px 0 0 color-mix(in srgb,var(--gold) 62%,transparent)}
+.pr-hot-top{display:flex;align-items:center;gap:9px}
+/* 名次在最左、类别贴最右，中间那串仓库名可以长到换行也不会把类别挤走 */
+.pr-hot-top .pr-tag{margin-left:auto}
 .pr-hot-top a{color:var(--gold2);font-weight:700;font-size:13px;text-decoration:none;overflow-wrap:anywhere}
 .pr-hot-top a:hover{text-decoration:underline}
 .pr-hot-meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0 3px;color:var(--dim);font-size:11px}

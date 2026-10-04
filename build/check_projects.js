@@ -130,6 +130,31 @@ assert.strictEqual(P.hotFresh([{ name: 'x' }], []).length, 1, '空库时全都�
 // 无 url 无 name 的脏项不能算「新」
 assert.strictEqual(P.hotFresh([{ url: '' , name: '' }], []).length, 0);
 
+/* ---------- 榜单口径（2026-10-04 新增：升星速度榜 / 总星数榜）----------
+   上游同时给日增与周增两个量纲，不折算就排序 = 周榜项永远碾压日榜项。 */
+assert.strictEqual(P.hotGain({ stars_today: 120, stars_week: 900 }), 120, '有日增就用日增');
+assert.strictEqual(P.hotGain({ stars_today: 0, stars_week: 700 }), 100, '只有周增要折成日均');
+assert.strictEqual(P.hotGain({ stars_today: 0, stars_week: 10 }), 1, '折算要四舍五入');
+assert.strictEqual(P.hotGain({}), 0);
+assert.strictEqual(P.hotGain({ stars_today: '88' }), 88, '字符串也要能解析');
+
+const R_A = { name: 'a', stars: 100, stars_today: 10, stars_week: 0 };
+const R_B = { name: 'b', stars: 999999, stars_today: 0, stars_week: 700 };  // 日均 100
+const R_C = { name: 'c', stars: 500000, stars_today: 0, stars_week: 0 };
+assert.deepStrictEqual(P.hotRank([R_A, R_B, R_C], 'gain').map(x => x.name), ['b', 'a', 'c'],
+  '升星榜按日均升星降序，两个量纲要能混排');
+assert.deepStrictEqual(P.hotRank([R_A, R_B, R_C], 'stars').map(x => x.name), ['b', 'c', 'a'],
+  '总星榜按总星数降序');
+assert.strictEqual(P.hotRank([R_A, R_B], 'gain').length, 2, '排名不能吃掉条目');
+const rankSrc = [R_A, R_B];
+P.hotRank(rankSrc, 'stars');
+assert.deepStrictEqual(rankSrc, [R_A, R_B], 'hotRank 不能就地改原数组（否则收进按钮的索引会错位）');
+// 主键相等时用副键兜底 —— 否则两次渲染顺序会漂
+const T1 = { name: 't1', stars: 5, stars_today: 0, stars_week: 0 };
+const T2 = { name: 't2', stars: 9, stars_today: 0, stars_week: 0 };
+assert.deepStrictEqual(P.hotRank([T1, T2], 'gain').map(x => x.name), ['t2', 't1'],
+  '日均相同时按总星兜底，排序要稳定');
+
 /* ---------- 热点数据源路径必须与 make_app.py 的白名单一致 ---------- */
 assert.strictEqual(P.HOT_URL, '/assets/hot-projects.json');
 
@@ -231,4 +256,4 @@ if (fs.existsSync(htmlPath)) {
   assert.ok(ids.has('toast'), '产物里找不到 id="toast"，守卫样本没了，检查是否改了 id');
 }
 
-console.log('projects.js 自检通过：日期 7 · Star 7 · 表头 8 · 列序 2 · 筛选 13 · 边界 2 · 热点 18 · 库字段 6 · 全局遮蔽 1');
+console.log('projects.js 自检通过：日期 7 · Star 7 · 表头 8 · 列序 2 · 筛选 13 · 边界 2 · 热点 28 · 库字段 6 · 全局遮蔽 1');

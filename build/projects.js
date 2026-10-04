@@ -155,6 +155,28 @@
     return Math.max(w, d * 7, Number(h && h.heat) || 0);
   }
 
+  /* ---------- 榜单口径（2026-10-04 新增）
+     上游数据有两套量纲：日榜（stars today）与周榜（stars this week）。
+     ① 升星榜要能横向比，就必须先折成同一单位：日榜直接取日增；
+        **只有周榜数据的仓库**按 7 天摊成日均。不折算的话，周榜项永远碾压日榜项。
+     ② 总星榜按 stars 降序 —— 这个榜不看热度，看存量，两个榜互补。
+     ★ 排序必须稳定：主键相等时用副键兜底，否则同一份数据两次渲染顺序会漂。 */
+  function hotGain(h) {
+    var d = Number(h && h.stars_today) || 0;
+    var w = Number(h && h.stars_week) || 0;
+    if (d > 0) return d;
+    return w > 0 ? Math.round(w / 7) : 0;
+  }
+
+  function hotRank(list, key) {
+    var byStars = key === 'stars';
+    return (list || []).slice().sort(function (a, b) {
+      var s = (Number(b && b.stars) || 0) - (Number(a && a.stars) || 0);
+      var g = hotGain(b) - hotGain(a);
+      return byStars ? (s || g) : (g || s);
+    });
+  }
+
   // 热点项 → 库里那套字段（收进时直接用）
   function hotToRow(h) {
     return {
@@ -195,6 +217,8 @@
 
   PURE.HOT_URL = HOT_URL;
   PURE.hotHeat = hotHeat;
+  PURE.hotGain = hotGain;
+  PURE.hotRank = hotRank;
   PURE.hotToRow = hotToRow;
   PURE.hotFacts = hotFacts;
   PURE.hotFresh = hotFresh;
@@ -206,10 +230,15 @@
   var root = null, user = '', items = [], active = false;
   var f = { q: '', cat: '', open: '', from: '', to: '', minStars: '' };
   var editingId = null;
-  var hot = null, hotErr = '', hotAll = false;   // hot=null 表示还没拉过（成功/失败都会落地）
-  // 默认只铺前 6 张卡：热点全展开会把「我的库」挤到两屏之外，
-  // 而个人库才是这个模块的主视图。想全看就点「展开全部」。
-  var HOT_PREVIEW = 6;
+  var hot = null, hotErr = '';   // hot=null 表示还没拉过（成功/失败都会落地）
+  /* 两个视图（2026-10-04）：个人库与热点榜互不遮挡。
+     改之前是「热点卡片压在库表格上方、默认只铺 6 张」—— 用户想找自己收录的东西得先
+     滚过热点区，反过来想看榜单又只能看到 6 条，两头别扭。拆成两个视图后，
+     各自都能铺满：库视图是主视图（默认），热点榜铺全部 20 条并给排名。 */
+  var VIEWS = ['lib', 'hot'];
+  var view = 'lib';
+  // 榜单口径：gain=升星速度（日均），stars=总星数。默认升星，那才是"热点"。
+  var hotSort = 'gain';
 
   function $(sel) { return root.querySelector(sel); }
   function esc(s) {
@@ -338,12 +367,17 @@
   }
 
   /* ---------- 选择 ---------- */
-  function visible() {
-    var out = items.filter(function (it) { return matchItem(it, f); });
-    return out.sort(function (a, b) {
+  // 排序口径只有一处：入库日期倒序，同日按 Star 降序。
+  // 库表格与「导出全部」共用它，免得两条路径排出两种顺序。
+  function sortRows(list) {
+    return list.slice().sort(function (a, b) {
       if (a.added_at !== b.added_at) return a.added_at < b.added_at ? 1 : -1;
       return Number(b.stars) - Number(a.stars);
     });
+  }
+
+  function visible() {
+    return sortRows(items.filter(function (it) { return matchItem(it, f); }));
   }
 
   /* ---------- 渲染 ---------- */
@@ -387,12 +421,28 @@
     }).join('');
   }
 
+  /* 导出条：把"导的是哪一批"写在按钮上。
+     筛选与导出必须同一口径 —— 否则用户以为导了全部、其实只导了当前筛选结果。
+     全量导出单独给一个按钮，而不是靠"先点重置再导出"这种口头约定。 */
+  function renderExportBar(rows) {
+    var box = $('[data-pr-export-row]');
+    if (!box) return;
+    var filtered = rows.length !== items.length;
+    var html = '<button class="btn" type="button" data-pr-export>导出当前 ' + rows.length + ' 条</button>';
+    if (filtered) {
+      html += '<button class="pr-rowbtn" type="button" data-pr-export-all>导出全部 '
+        + items.length + ' 条</button>';
+    }
+    box.innerHTML = html;
+  }
+
   function renderTable() {
     var rows = visible();
     var box = $('[data-pr-body]');
     $('[data-pr-count]').textContent = rows.length === items.length
       ? ('共 ' + items.length + ' 个项目')
       : ('筛选出 ' + rows.length + ' / ' + items.length + ' 个项目');
+    renderExportBar(rows);
 
     if (!rows.length) {
       box.innerHTML = '<tr><td colspan="' + (COLS.length + 1) + '"><div class="pr-empty">'
@@ -408,10 +458,16 @@
       var link = it.url
         ? '<a href="' + esc(it.url) + '" target="_blank" rel="noopener noreferrer">' + esc(it.name || it.url) + '</a>'
         : esc(it.name || '—');
-      var meta = [it.note, it.url && it.name ? it.url : ''].filter(Boolean).map(esc).join(' · ');
+      /* 备注与地址分成两行、各自单行省略（title 里挂全文）。
+         为什么：备注现在会写上「… ｜ 商业价值：…」，跟地址拼成一行会把单元格撑成一大片，
+         十行表格看着像糊了一层字。 */
+      var note = String(it.note || '').trim();
+      var raw = (it.url && it.name) ? String(it.url) : '';
+      var meta = (note ? '<small class="pr-note-line" title="' + esc(note) + '">' + esc(note) + '</small>' : '')
+        + (raw ? '<small class="pr-url-line" title="' + esc(raw) + '">' + esc(raw) + '</small>' : '');
       return '<tr>'
         + '<td class="pr-date">' + esc(it.added_at) + '</td>'
-        + '<td class="pr-name">' + link + (meta ? '<small>' + meta + '</small>' : '') + '</td>'
+        + '<td class="pr-name">' + link + meta + '</td>'
         + '<td><span class="pr-tag">' + esc(it.category || '未分类') + '</span></td>'
         + '<td class="pr-summary"><p>' + esc(it.summary || '—') + '</p></td>'
         + '<td><span class="pr-open ' + tone + '">' + esc(it.openness || '未标注') + '</span></td>'
@@ -422,9 +478,42 @@
     }).join('');
   }
 
-  function render() { renderStats(); renderBars(); renderTable(); }
+  /* ---------- 视图切换（我的库 / 热点榜） ----------
+     只切可见性 + 按钮态：两个视图各自的数据源独立（库=云表，榜=静态 JSON），
+     互相不重绘，切换是零成本的。计数直接写在按钮上，扫一眼就知道各有多少。 */
+  function renderView() {
+    if (!root) return;
+    root.setAttribute('data-pr-view', view);
+    var panes = root.querySelectorAll('[data-pr-pane]');
+    for (var i = 0; i < panes.length; i++) {
+      if (panes[i].getAttribute('data-pr-pane') === view) panes[i].removeAttribute('hidden');
+      else panes[i].setAttribute('hidden', '');
+    }
+    var btns = root.querySelectorAll('[data-pr-view]');
+    for (var j = 0; j < btns.length; j++) {
+      var k = btns[j].getAttribute('data-pr-view');
+      btns[j].className = 'pr-view-btn' + (k === view ? ' active' : '');
+      var u = btns[j].querySelector('u');
+      if (u) {
+        u.textContent = (k === 'lib')
+          ? String(items.length)
+          : (hot && hot.items ? String(hot.items.length) : '—');
+      }
+    }
+  }
 
-  /* ---------- 热点推荐：渲染 / 收进 ---------- */
+  function render() { renderView(); renderStats(); renderBars(); renderTable(); }
+
+  /* ---------- 热点榜：排名 / 渲染 / 收进 ----------
+     榜就该有榜的样子：① 有排名号；② 排序口径写在界面上而不是藏在代码里；
+     ③ 两个口径各自成榜，由用户选。 */
+  var SORT_LABEL = { gain: '升星速度', stars: '总星数' };
+
+  function tabBtn(key) {
+    return '<button class="pr-rank-tab' + (hotSort === key ? ' active' : '') + '" type="button" '
+      + 'data-pr-sort="' + key + '">' + SORT_LABEL[key] + '</button>';
+  }
+
   function renderHot() {
     var box = root && $('[data-pr-hot]');
     if (!box) return;
@@ -445,30 +534,33 @@
       return;
     }
     var fresh = hotFresh(list, items);
-    var shown = hotAll ? list : list.slice(0, HOT_PREVIEW);
-    var rest = list.length - shown.length;
+    var ranked = hotRank(list, hotSort);
     var head = '<div class="pr-hot-head">'
-      + '<div><small>TRENDING ON GITHUB</small><b>热点推荐</b>'
+      + '<div><small>TRENDING ON GITHUB</small><b>热点榜</b>'
       + '<em>更新于 ' + esc(hot.updated_at || '—') + ' · 共 ' + list.length + ' 个'
       + (fresh.length ? ' · 其中 <u>' + fresh.length + '</u> 个尚未收进' : ' · 已全部收进') + '</em></div>'
       + '<div class="pr-hot-act">'
+      + '<div class="pr-rank-tabs" data-pr-rank-tabs>' + tabBtn('gain') + tabBtn('stars') + '</div>'
       + '<button class="btn sm" type="button" data-pr-adopt-all' + (fresh.length ? '' : ' disabled') + '>'
       + '全部收进' + (fresh.length ? '（' + fresh.length + '）' : '') + '</button>'
-      + '<button class="pr-rowbtn" type="button" data-pr-hot-toggle>'
-      + (hotAll ? '收起' : '展开全部（' + list.length + '）') + '</button>'
       + '</div></div>';
 
-    var body = '<div class="pr-hot-grid">' + shown.map(function (h) {
+    var body = '<div class="pr-hot-grid">' + ranked.map(function (h, i) {
       var owned = fresh.indexOf(h) < 0;
-      return '<article class="pr-hot-card' + (owned ? ' owned' : '') + '">'
+      return '<article class="pr-hot-card' + (owned ? ' owned' : '') + (i < 3 ? ' top' : '') + '"'
+        + ' data-pr-rank="' + (i + 1) + '">'
         + '<div class="pr-hot-top">'
+        + '<span class="pr-rank' + (i < 3 ? ' hot' : '') + '">' + (i + 1) + '</span>'
         + '<a href="' + esc(h.url || '#') + '" target="_blank" rel="noopener noreferrer">'
         + esc(h.name || '') + '</a>'
         + '<span class="pr-tag">' + esc(h.category || '其他') + '</span>'
         + '</div>'
-        + '<div class="pr-hot-meta"><span class="pr-stars">★ ' + num(h.stars) + '</span>'
+        + '<div class="pr-hot-meta">'
+        + '<span class="pr-stars">★ ' + num(h.stars) + '</span>'
+        + '<span class="pr-gain">日均 +' + num(hotGain(h)) + '</span>'
         + '<span>' + esc(hotFacts(h)) + '</span>'
-        + '<span class="pr-open ' + (TONE[h.openness] || 'muted') + '">' + esc(h.openness || '') + '</span></div>'
+        + '<span class="pr-open ' + (TONE[h.openness] || 'muted') + '">' + esc(h.openness || '') + '</span>'
+        + '</div>'
         + '<p class="pr-hot-sum">' + esc(h.summary || '（无简介）') + '</p>'
         + (h.biz ? '<p class="pr-hot-biz"><b>商业价值</b>' + esc(h.biz) + '</p>' : '')
         + '<div class="pr-hot-foot">'
@@ -476,11 +568,14 @@
           ? '<span class="pr-owned">✓ 已在个人库</span>'
           : '<button class="pr-rowbtn" type="button" data-pr-adopt="' + (list.indexOf(h)) + '">收进我的库</button>')
         + '</div></article>';
-    }).join('') + '</div>'
-      + (rest > 0 ? '<p class="pr-hot-more">还有 ' + rest + ' 个未展示 —— 点右上「展开全部（'
-          + list.length + '）」。</p>' : '');
+    }).join('') + '</div>';
 
-    box.innerHTML = head + body;
+    var basis = hotSort === 'gain'
+      ? '按日均升星排序：日榜项取日增，只有周榜数据的按「周增 ÷ 7」折算成日均'
+        + '（两个榜量纲不同，不折算的话周榜项会永远碾压日榜项）。'
+      : '按总 Star 数排序：看存量不看热度，这是一张家底榜。';
+    box.innerHTML = head + body + '<p class="pr-hot-more">' + esc(basis)
+      + ' 排名每天随上游榜单变化。</p>';
   }
 
   // 收进：按 depKey 去重（与 Excel 导入同一口径），已存在则跳过。
@@ -526,11 +621,13 @@
       hot = { updated_at: (j && j.updated_at) || '', items: arr };
       hotErr = '';
       renderHot();
+      renderView();      // 榜单条数写在切换按钮上，数据到了要顺手更新
     }).catch(function () {
       // 离线 / 资源缺失都不该让模块报错，只是这块空着
       hot = { updated_at: '', items: [] };
       hotErr = '离线或数据文件缺失';
       renderHot();
+      renderView();
     });
   }
 
@@ -667,13 +764,13 @@
     return 'FluxDesk_项目库_' + d.getFullYear() + z(d.getMonth() + 1) + z(d.getDate()) + '.' + ext;
   }
 
-  function exportXlsx() {
-    var rows = visible();
+  function exportXlsx(rows, label) {
+    rows = rows || visible();
     if (!rows.length) { toast('当前没有可导出的项目。'); return; }
     var wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, sheetFromRows(rows), '项目库');
     XLSX.writeFile(wb, fileName('xlsx'));
-    toast('已导出 ' + rows.length + ' 个项目。');
+    toast('已导出' + (label ? label + ' ' : '') + rows.length + ' 个项目。');
   }
 
   function downloadTemplate() {
@@ -813,9 +910,16 @@
       + '<button class="btn primary" type="button" data-pr-new>新增项目</button>'
       + '<button class="btn" type="button" data-pr-tpl>下载模板</button>'
       + '<button class="btn" type="button" data-pr-import>导入 Excel</button>'
-      + '<button class="btn" type="button" data-pr-export>导出 Excel</button>'
       + '</div></div>'
-      + '<section class="pr-hot" data-pr-hot></section>'
+      /* 视图切换：两个按钮，计数写在按钮上。默认「我的库」——
+         这才是这个模块的主视图（改之前热点卡片压在库表格上方，还得先滚过去）。 */
+      + '<div class="pr-views" role="tablist">'
+      + '<button class="pr-view-btn active" type="button" data-pr-view="lib" role="tab">'
+      + '<span class="nav-glyph">▤</span>我的库 <u>0</u></button>'
+      + '<button class="pr-view-btn" type="button" data-pr-view="hot" role="tab">'
+      + '<span class="nav-glyph">★</span>热点榜 <u>—</u></button>'
+      + '</div>'
+      + '<section class="pr-pane" data-pr-pane="lib">'
       + '<section class="pr-stats" data-pr-stats></section>'
       + '<div class="pr-panel">'
       + '<div class="pr-bars" data-pr-bars></div>'
@@ -834,9 +938,15 @@
       + '<thead><tr>'
       + '<th>入库日期</th><th>项目</th><th>类别</th><th>项目简介</th><th>开源程度</th><th style="text-align:right">Star</th><th>操作</th>'
       + '</tr></thead><tbody data-pr-body></tbody></table></div>'
+      /* 计数 + 导出条同一行：导的是"当前筛选"还是"全部"，按钮上直接写明条数 */
+      + '<div class="pr-toolbar"><p class="pr-note" data-pr-count></p>'
+      + '<div class="pr-toolbar-act" data-pr-export-row></div></div>'
       + '</div>'
-      + '<p class="pr-note" data-pr-count></p>'
       + '<p class="pr-note">数据保存在服务端（仅管理员可见），来源是手工录入或 Excel 导入。换设备或换浏览器登录，看到的是同一份库。</p>'
+      + '</section>'
+      + '<section class="pr-pane" data-pr-pane="hot" hidden>'
+      + '<section class="pr-hot" data-pr-hot></section>'
+      + '</section>'
       + '<div class="pr-note" data-pr-toast style="position:fixed;left:50%;bottom:28px;transform:translateX(-50%);padding:10px 18px;border:1px solid var(--border2);border-radius:10px;background:var(--panel2);color:var(--text);opacity:0;pointer-events:none;transition:opacity .2s"></div>'
       + '<dialog class="pr-dialog" data-pr-dialog>'
       + '<div class="pr-dlg-head"><h2 data-pr-dlg-title>新增项目</h2>'
@@ -860,15 +970,26 @@
   /* ---------- 事件（全部委托在 root 上，重绘不用重绑） ---------- */
   function onClick(e) {
     var t = e.target.closest('[data-pr-new],[data-pr-tpl],[data-pr-import],[data-pr-export],'
-      + '[data-pr-reset],[data-pr-edit],[data-pr-del],[data-pr-save],[data-pr-cancel],[data-pr-bar],'
-      + '[data-pr-adopt],[data-pr-adopt-all],[data-pr-hot-toggle]');
+      + '[data-pr-export-all],[data-pr-reset],[data-pr-edit],[data-pr-del],[data-pr-save],'
+      + '[data-pr-cancel],[data-pr-bar],[data-pr-view],[data-pr-sort],'
+      + '[data-pr-adopt],[data-pr-adopt-all]');
     if (!t) return;
     if (t.hasAttribute('data-pr-adopt')) {
       var one = (hot && hot.items) ? hot.items[Number(t.getAttribute('data-pr-adopt'))] : null;
       return one ? adopt([one]) : undefined;
     }
     if (t.hasAttribute('data-pr-adopt-all')) return adopt(hotFresh(hot && hot.items, items));
-    if (t.hasAttribute('data-pr-hot-toggle')) { hotAll = !hotAll; return renderHot(); }
+    if (t.hasAttribute('data-pr-view')) {
+      var v = t.getAttribute('data-pr-view');
+      if (VIEWS.indexOf(v) >= 0) { view = v; renderView(); }
+      return;
+    }
+    if (t.hasAttribute('data-pr-sort')) {
+      var s = t.getAttribute('data-pr-sort');
+      if (SORT_LABEL[s]) { hotSort = s; renderHot(); }
+      return;
+    }
+    if (t.hasAttribute('data-pr-export-all')) return exportXlsx(sortRows(items), '全部');
     if (t.hasAttribute('data-pr-new')) return openEditor(null);
     if (t.hasAttribute('data-pr-tpl')) return downloadTemplate();
     if (t.hasAttribute('data-pr-import')) return $('[data-pr-file]').click();
@@ -914,6 +1035,8 @@
     items = [];
     hot = null;        // 每次重开都重新拉热点（榜单每天变），热点自身有模块内缓存
     loadErr = '';
+    view = 'lib';      // 每次打开都落在「我的库」——收录的东西不该被热点挡在后面
+    hotSort = 'gain';
     setSync('loading', '正在从云端读取…');
     render();          // 先铺骨架与空态，别让用户对着白屏等
     renderHot();
