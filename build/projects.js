@@ -339,14 +339,17 @@
 
   /* 导出条：把"导的是哪一批"写在按钮上。
      筛选与导出必须同一口径 —— 否则用户以为导了全部、其实只导了当前筛选结果。
-     全量导出单独给一个按钮，而不是靠"先点重置再导出"这种口头约定。 */
+     全量导出单独给一个按钮，而不是靠"先点重置再导出"这种口头约定。
+     ⚠️ 位置：右上角动作区（见 skeleton 的注释）。两个按钮同为 .btn 尺寸，
+        次要那个弱化一档颜色 —— 在这条动作带里再塞个 11px 小按钮会显得像误入的。 */
   function renderExportBar(rows) {
     var box = $('[data-pr-export-row]');
     if (!box) return;
-    var filtered = rows.length !== items.length;
-    var html = '<button class="btn" type="button" data-pr-export>导出当前 ' + rows.length + ' 条</button>';
-    if (filtered) {
-      html += '<button class="pr-rowbtn" type="button" data-pr-export-all>导出全部 '
+    var n = rows.length;
+    var html = '<button class="btn" type="button" data-pr-export' + (n ? '' : ' disabled')
+      + '>导出当前 ' + n + ' 条</button>';
+    if (n !== items.length) {
+      html += '<button class="btn" type="button" data-pr-export-all>导出全部 '
         + items.length + ' 条</button>';
     }
     box.innerHTML = html;
@@ -598,7 +601,13 @@
       + '<p>把收集到的开源项目建档、归类、筛选，随时导出成 Excel 归档或带走。'
       + '内容全站公开，无需登录即可查看。</p>'
       + '<div class="pr-state" data-pr-state="loading">正在读取…</div></div>'
+      /* ★ 导出条常驻右上角动作区。
+         它原来挂在 22 行表格**下面**的工具栏里 ⇒ 不滚到底根本看不见，
+         用户直接来问"导出按钮去哪儿了"（2026-10-04）。
+         动作就该待在动作区：和「刷新数据」并排，任何滚动位置都够得着。
+         表格下方只保留计数文字，不再重复放一份按钮（单一出口，不给自己留两套口径）。 */
       + '<div class="pr-actions">'
+      + '<span class="pr-export-row" data-pr-export-row></span>'
       + '<button class="btn" type="button" data-pr-refresh>刷新数据</button>'
       + '</div></div>'
       /* 视图切换：两个按钮，计数写在按钮上。默认「收录项目」——
@@ -629,9 +638,9 @@
       + '<th>#</th><th>入库日期</th><th>项目</th><th>类别</th><th>项目简介</th><th>开源程度</th>'
       + '<th style="text-align:right">Star</th>'
       + '</tr></thead><tbody data-pr-body></tbody></table></div>'
-      /* 计数 + 导出条同一行：导的是"当前筛选"还是"全部"，按钮上直接写明条数 */
-      + '<div class="pr-toolbar"><p class="pr-note" data-pr-count></p>'
-      + '<div class="pr-toolbar-act" data-pr-export-row></div></div>'
+      /* 计数 + 导出条曾经同一行；导出按钮已移到右上角动作区，这里只留计数
+         （「导的是哪一批」由按钮自己写明白，不需要在这里再复述一遍）。 */
+      + '<div class="pr-toolbar"><p class="pr-note" data-pr-count></p></div>'
       + '</div>'
       + '<p class="pr-note">数据保存在云数据库，读权限对所有人开放（含未登录访客），'
       + '由运维侧的定时任务更新。列表按最近更新时间倒序排列，即"更新顺序"。</p>'

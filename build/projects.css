@@ -26,9 +26,17 @@
 .pr-view-btn u{text-decoration:none;padding:1px 7px;border-radius:9px;background:color-mix(in srgb,var(--gold) 16%,transparent);color:var(--gold2);font:700 11.5px var(--number)}
 .pr-pane[hidden]{display:none!important}
 /* 计数 + 导出按钮同一行：导的是"当前筛选"还是"全部"，条数直接写在按钮上 */
-.pr-toolbar{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;padding:0 18px}
+/* 表格下方的工具栏：现在只剩一行计数文字 ——
+   导出按钮已移到右上角动作区（原因见 .pr-export-row 的注释），这里不再放按钮。 */
+.pr-toolbar{padding:0 18px}
 .pr-toolbar .pr-note{margin:14px 0}
-.pr-toolbar-act{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+/* 右上角动作区里的导出条。
+   ★ 位置是硬要求：它原来挂在表格底部，22 行表格要滚到底才看得见，
+     用户直接问"导出按钮去哪儿了"（2026-10-04）。动作必须待在动作区。
+   ★ 次要按钮（导出全部 M 条）用同一档 .btn 尺寸，只弱化颜色 ——
+     在一条 12.5px 的动作带里塞个 11px 小按钮会显得像误入的。 */
+.pr-export-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.pr-actions .btn[data-pr-export-all]{color:var(--dim)}
 .pr-panel{border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--panel) 92%,transparent);box-shadow:0 14px 38px rgba(3,8,20,.06)}
 .pr-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);border-radius:16px;overflow:hidden;margin-bottom:16px}
 .pr-stat{padding:16px 18px;background:color-mix(in srgb,var(--panel) 92%,transparent)}
@@ -92,8 +100,6 @@ html[data-theme="light"] .pr-open.muted{background:#f0f2f6;color:#5b6478}
 html[data-theme="light"] .pr-open.bad{background:#fdeef1;color:#c0394f}
 html[data-theme="light"] .pr-stat,html[data-theme="light"] .pr-panel{background:#fff}
 .pr-stars{font:700 13px var(--number);color:var(--gold2);white-space:nowrap;text-align:right}
-.pr-rowbtn{padding:4px 9px;border:1px solid var(--border);border-radius:7px;background:transparent;color:var(--dim);font-size:11px;cursor:pointer;white-space:nowrap}
-.pr-rowbtn:hover{color:var(--text);border-color:var(--border2)}
 .pr-empty{padding:56px 20px;text-align:center;color:var(--dim);font-size:13px;line-height:1.8}
 .pr-empty b{display:block;margin-bottom:8px;color:var(--text);font-size:15px}
 .pr-note{margin:16px 3px;color:var(--dim);font-size:11px;line-height:1.7}
