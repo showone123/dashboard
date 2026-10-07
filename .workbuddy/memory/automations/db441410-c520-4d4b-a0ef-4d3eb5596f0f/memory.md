@@ -1,5 +1,14 @@
 # 自动化执行记录：GitHub 热点项目日报
 
+## 2026-10-06 20:00
+- trending 日榜 12 条 + 周榜 12 条（周榜首次 IncompleteRead 502，重跑即正常 → 遇此错先重跑一次，别急着判定页面结构变更）；去重后 20 个候选。
+- 对比 10-05 榜单，**新面孔 9 个**：morluto/rea、mattpocock/skills、NVIDIA/OpenShell、VectifyAI/PageIndex、byoungd/up、deepseek-ai/DeepGEMM、ayghri/i-have-adhd、HunxByts/GhostTrack、cathrynlavery/diagram-design。
+- 20 条全部补中文简介 + 商业价值，无「未写商业价值」告警；自动分类纠正 11 条。
+- 门禁 verify.py：通过 59 项 / 0 失败。
+- GitHub 推送成功，**远端 commit sha：e13242b**（API 通道；本地 938af5d）。
+- 部署上线 + 4 项验收全绿（index.html sha256 一致 `35379c54…` / JSON content-type=application/json / JSON 内容一致 20 条 / futures API 200）。
+- 线上链接：https://data-dashboard-85191.app.workbuddy.host/
+
 ## 2026-10-05 20:00（当日取数那轮）
 - 抓取 trending 日榜 12 条 + 周榜 21 条，去重后 20 个候选（trending 正常，未触发搜索 API 兜底）。
 - 对比 10-04 榜单，**新面孔 5 个**：boykopovar/AnyPS5、msitarzewski/agency-agents、DuarteSantos8/openGym、caddyserver/caddy、earthtojake/text-to-cad。
