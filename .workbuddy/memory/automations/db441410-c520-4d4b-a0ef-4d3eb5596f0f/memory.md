@@ -1,5 +1,15 @@
 # 自动化执行记录：GitHub 热点项目日报
 
+## 2026-10-08 20:00
+- trending 日榜 9 条 + 周榜 11 条，去重后 **16 个候选**（trending 正常返回，未触发搜索 API 兜底；本轮条目偏少属源站波动，非异常）。
+- 对比 10-07 榜单，**新面孔 4 个**：storytold/artcraft、anthropics/knowledge-work-plugins、liquidslr/system-design-notes、earthtojake/text-to-cad。
+- 16 条全部补中文简介 + 商业价值，无「未写商业价值」告警；自动分类纠正 7 条。
+- 门禁 verify.py：通过 59 项 / 0 失败。
+- GitHub 推送成功，**远端 commit sha：7d49ccf**（API 通道；本地 ac30a30）。
+- 部署上线 + 4 项验收全绿（index.html sha256 一致 `35379c54…` / JSON content-type=application/json / JSON 内容一致 16 条 / futures API 200）。
+- 线上链接：https://data-dashboard-85191.app.workbuddy.host/
+- 注：`_verify/hot_biz.json` 会跨轮残留，其中不在当日候选里的条目会被忽略，可直接复用旧条目文案。
+
 ## 2026-10-07 20:00
 - trending 日榜 13 条 + 周榜 11 条（本轮无网络抖动），去重后 20 个候选，**未触发搜索 API 兜底**。
 - 对比 10-06 榜单，**新面孔 6 个**：cloudflare/security-audit-skill、addyosmani/agent-skills、trycua/cua、cursor/plugins、tile-ai/tilelang、EpicGames/raddebugger。
