@@ -1,5 +1,15 @@
 # 自动化执行记录：GitHub 热点项目日报
 
+## 2026-10-10 20:00
+- ⚠️ **首次 trending 抓取 WinError 10060 连接超时**（代理残留 + GitHub 间歇不可达）→ 自动退搜索 API 兜底；**重跑一次即恢复**（日榜 13 + 周榜 13 → 20 候选）。结论：trending 超时/IncompleteRead 先重跑一次，再判定页面结构变更。
+- 对比 10-09 榜单，**新面孔 6 个**：tester-army/e2e、hugohe3/ppt-master、multica-ai/andrej-karpathy-skills、mksglu/context-mode、huggingface/transformers、pytorch/pytorch（落榜 6 个：Agent-Reach、agent-skills、open-code-review、lingbot-map、litellm、SwiftUI-Agent-Skill）。
+- 20 条全部补中文简介 + 商业价值，无「未写商业价值」告警；分类覆盖 6 条（rea/mattpocock-skills/openrig/cursor-plugins/karpathy-skills/context-mode → 开发者工具；diagram-design/hyperframes/ppt-master → 效率工具；transformers/pytorch → AI / LLM）。
+- 门禁 verify.py：通过 59 项 / 0 失败。
+- GitHub 推送成功，**远端 commit sha：cc1ad3e**（API 通道；本地 6e88bea）。
+- 部署上线 + 4 项验收全绿（index.html sha256 一致 `35379c54…` / JSON content-type=application/json / JSON 内容一致 20 条 / futures API 200）。
+- 线上链接：https://data-dashboard-85191.app.workbuddy.host/
+- 注：`--out ../_verify/x.json` 在 cwd=wb-checkout 下落到**上级 `2026-09-15-21-15-13/_verify/`**；`hot_biz.json` 同目录，可直接复用旧条目文案。
+
 ## 2026-10-09 20:00
 - trending 日榜 11 条 + 周榜 11 条，去重后 **20 个候选**（trending 正常返回，未触发搜索 API 兜底）。
 - 对比 10-08 榜单，**新面孔 6 个**：addyosmani/agent-skills、pingdotgg/t3code、alibaba/open-code-review、Robbyant/lingbot-map、BerriAI/litellm、twostraws/SwiftUI-Agent-Skill（落榜 2 个：pablostanley/yoinks、liquidslr/system-design-notes）。
