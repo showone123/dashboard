@@ -14,6 +14,18 @@
   全库策略 14 条。**前端一律直读云表 → 改数据不需要重新部署**；只有改代码才需 build + verify + 部署。
 - ⚠️ **前端已无任何写入口**（2026-10-04 改版删净）。新收录只能由运维侧用管理通道写：
   见 `docs/HOT_PROJECTS.md` 的 INSERT 模板。
+- ★ **收录已排进每晚自动化**（2026-10-12 起）：任务 `db441410-…` 的**步骤 5** 会把当天新面孔
+  批量 INSERT 进云表。**这一步曾经漏掉过**：10-04 改版把写入口删了，但「补录」只写在文档里、
+  没进任何自动任务 ⇒ 热点榜天天更新、收录表却冻结在 22 行，代哥 10-12 直接来问
+  「收录日期怎么只到十月四号」。**收录是必做步骤，不是可选项。**
+- 补录/新增的正确姿势：`INSERT INTO public.projects (id, owner_id, added_at, name, url, category,
+  summary, openness, stars, note) VALUES … ON CONFLICT (id) DO NOTHING;`
+  一条批量 INSERT 搞定（别无脑每行一次调用）。`added_at` 用**首次上榜那天**，`note` 用
+  `热点推荐 · 日榜 +N ｜ 商业价值：…`。写完必须回读 `GROUP BY added_at` 核验。
+- ⚠️ **只改数据不用重新部署**（前端直读云表）；只有改代码才 build + verify + deploy。
+- ⚠️ 前端 `load()` 有 `limit(1000)`：总行数近 800 就要考虑加筛选/分页（2026-10-12 = 58 行，约 6/天）。
+- 断更回填：每日快照都在 git 历史里，`git show <sha>:assets/hot-projects.json` 可取回；
+  逐日求差 + 生成批量 INSERT 的脚本在 `_verify/backfill_extract.py` 与 `_verify/backfill_sql.py`。
 
 ## 热点榜单（assets/hot-projects.json）
 - 每晚由 `build/refresh_hot.py` 全量重写（trending 日榜∪周榜 → 去重 → 按热度取前 20），

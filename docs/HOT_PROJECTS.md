@@ -47,6 +47,12 @@ build/projects.js  →  收录项目视图（全量、按 updated_at 倒序、�
 前端已无任何写调用（`verify.py §6.2b` 从源码层面拦 `.insert(` / `.update(` / `.upsert(` /
 `.delete(`）。新增收录只有一条路：**运维侧定时任务走 `db_exec_sql` 管理通道**。
 
+> ⚠️ **2026-10-05 ~ 10-11 断更过一次，教训记在这**：改版后「收录」这一步只是**文档里写了**，
+> 没排进任何自动任务 —— 每晚的自动化只做了「抓 trending → 写 hot-projects.json → 部署」，
+> 结果热点榜天天在更新，收录表却从 10-04 起冻结在 22 行，用户直接来问
+> 「收录日期怎么只到十月四号」。**收录是每晚任务的第 5 步，不是可选项**（见下面「怎么跑」）。
+> 前端直读云表，所以「只补数据」不需要 build / verify / 部署，插完刷新即见。
+
 ```sql
 -- mode=write；单条语句一次调用。★ owner_id 必须显式给：
 -- 管理通道下 auth.uid() 是 NULL，靠列 DEFAULT 会直接撞 NOT NULL 违约。
@@ -107,7 +113,8 @@ export no_proxy='*' NO_PROXY='*'          # 本机残留代理会干扰
 # 1) 取数（已有商业价值覆盖文件就直接用）
 python build/refresh_hot.py --top 20 --biz ../_verify/hot_biz.json
 
-# 2) 需要的话把新上榜的仓库补进云表（见上文 INSERT 模板，走 db_exec_sql）
+# 2) ★ 把今天的新面孔补进云表（见上文 INSERT 模板，走 db_exec_sql）
+#    —— 这一步不能省，省了「收录项目」视图就冻在上一次写入的日期上
 
 # 3) 门禁（会重建 dist/ 并校验热点数据与产物一致）
 python verify.py
@@ -115,6 +122,27 @@ python verify.py
 # 4) 本地渲染验收：两个视图 / 两个榜 / 深浅主题 + 38 条断言
 python _verify/run_collection_render.py
 ```
+
+自动化任务 `GitHub 每日新星 → 项目收藏 + 云表收录（20:00）` 已把上面 1-4 全串起来，
+其中第 2 步（写云表）在任务里是**步骤 5**。
+
+### 收录口径
+
+- **收什么**：当天相对昨天的**全部新面孔**（`assets/hot-projects.json` 与前一版 `items[].name` 求差）。不筛不挑。
+- **去重**：`(url || name).toLowerCase()`，库里任一命中即跳过，不会重复插。
+- **`added_at`** = 该仓库首次出现在榜单的那一天（补录时按历史快照回填，不是补录当天）。
+- **`note`** = 快照的 note + `" ｜ 商业价值："` + biz ⇒ 形如 `热点推荐 · 日榜 +541 ｜ 商业价值：…`。
+- ⚠️ **`owner_id` 必须显式给** `'2099891421614968832'`：管理通道下 `auth.uid()` 是 NULL，
+  靠列 DEFAULT 会直接撞 NOT NULL。
+- ⚠️ 前端 `load()` 有 `limit(1000)`。按每天约 6 个新面孔，**总行数接近 800 时就该加筛选或分页**，
+  否则会静默截断（2026-10-12 为 58 行）。
+
+### 断更怎么补
+
+每天的榜单快照都在 git 历史里（每次 nightly refresh 都有独立 commit），
+用 `git show <sha>:assets/hot-projects.json` 取回即可重建任意一天的清单。
+2026-10-12 就是用 `_verify/backfill_extract.py` 从 `aad84e5`(10-04 基准) 起逐日求差，
+再 `_verify/backfill_sql.py` 生成一条批量 INSERT 补进 10-05 ~ 10-11 的 36 行。
 
 `--biz` 覆盖文件（键 = `owner/repo`，三个字段都可选）：
 
@@ -168,6 +196,7 @@ python _verify/run_collection_render.py
 | 「读取失败：云服务未就绪」 | `app.js` 忘了把 cloud 实例挂到 `window` | 2026-10-04 真实故障：`cloud` 曾是模块局部变量，SDK 只暴露 `WorkBuddyCloud` ⇒ 页面永远空着却"看着正常"。修法见 `build/app.js` 的 `window.cloud = cloud;` |
 | 「读取失败：没有权限读取」 | 迁移 004 没应用 | 跑 004 的自检三条查询（见迁移文件末尾） |
 | 页面上「更新于」是很久以前 | 改了 `assets/hot-projects.json` 但没重建 | 比对源文件与 `dist/` 的 sha256 |
+| 「收录项目」的**入库日期停在某一天不动** | 那一晚的收录步骤没执行（热点榜照常更新，所以不容易发现） | `SELECT added_at, count(*) FROM public.projects GROUP BY added_at ORDER BY added_at DESC` —— 看日期是否连续；断了就按「断更怎么补」回填 |
 | 抓取返回 0 条 | trending 页 DOM 改了（脚本会退回搜索 API 兜底） | 看脚本输出的 `trending daily: N 条` |
 | 收集数量只有个位数 | GitHub API 限流（匿名 60 次/时） | 看脚本输出的 `token: 有/无` |
 | 热点卡片全没了 | 前端 fetch 被拦或资源被 `BLOCKED` | 浏览器 Network 看 `/assets/hot-projects.json` |

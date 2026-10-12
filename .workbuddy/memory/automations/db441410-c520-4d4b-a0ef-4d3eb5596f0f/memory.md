@@ -1,5 +1,28 @@
 # 自动化执行记录：GitHub 热点项目日报
 
+## 2026-10-12（非取数轮：修「收录日期停在 10-04」+ 任务改成含收录）
+- ⚠️ **发现并修掉一条长期断链**：10-04 改版后「收录进云表」只写在文档里、没进自动任务
+  ⇒ 热点榜天天更新，`public.projects` 却冻结在 22 行（10-04 起），代哥来问「收录日期怎么只到十月四号」。
+- **本任务已升级**：更名 `GitHub 每日新星 → 项目收藏 + 云表收录（20:00）`，
+  新增**步骤 5「收录进云表」**（原 5-9 顺延为 6-10），报告结尾要多给「收录结果」一行。
+  ⇒ 以后每轮都要写库，别再只更新热点榜。
+- **补账 36 行**：从 git 历史快照逐日求差（10-05~10-11），去掉库里已有 4 个；
+  云表 22 → **58 行**，日期连续到 10-11；线上匿名读 `/.cloud/database/rest/projects` 实测 200 + 58 行。
+- 只改数据**不需要重新部署**（前端直读云表）；dist/index.html sha256 仍 `35379c54…` 未变。
+- 门禁 59/0。文档 `docs/HOT_PROJECTS.md` 已补收录口径与断更回填法。
+- 备忘：查线上云表的正确姿势 = `https://data-dashboard-85191.app.workbuddy.host/.cloud/database/rest/projects`
+  + 头 `x-wb-webapp-access-key`（**不是** `apikey`，也不是 `/rest/v1/...`，后者会被 SPA 兜底成 HTML）。
+
+## 2026-10-11 20:00
+- trending 日榜 8 条 + 周榜 12 条，去重后 **19 个候选**（trending 正常返回，未触发搜索 API 兜底）。
+- 对比 10-10 榜单，**新面孔 6 个**：bilawalsidhu/gods-eye-view、lyogavin/airllm、chrislgarry/Apollo-11、danyuchn/asd-ste100-skill、flutter/flutter、ranxianglei/billion-context（落榜 7 个：openGym、knowledge-work-plugins、ppt-master、t3code、karpathy-skills、context-mode、huggingface/transformers）。
+- 19 条全部补中文简介 + 商业价值，无「未写商业价值」告警；分类覆盖 11 条（rea/mattpocock-skills/e2e/openrig/cursor-plugins/asd-ste100-skill → 开发者工具；diagram-design/hyperframes → 效率工具；AnyPS5 → 其他；pytorch → AI / LLM；Apollo-11 → 学习资源；gods-eye-view → 数据分析；flutter → 前端 UI）。
+- 门禁 verify.py：通过 59 项 / 0 失败。
+- GitHub 推送成功，**远端 commit sha：fd481fb**（API 通道；本地 9f6ba48）。
+- ⚠️ **sites 部署工具前两次报 `Error publishing site: fetch failed`，第三次成功** —— 与 trending 一样属间歇性网络问题，先重试再判定故障（本轮共试 3 次）。
+- 部署上线 + 4 项验收全绿（index.html sha256 一致 `35379c54…` / JSON content-type 含 application/json / JSON 内容一致 19 条 / futures API 200）。
+- 线上链接：https://data-dashboard-85191.app.workbuddy.host/
+
 ## 2026-10-10 20:00
 - ⚠️ **首次 trending 抓取 WinError 10060 连接超时**（代理残留 + GitHub 间歇不可达）→ 自动退搜索 API 兜底；**重跑一次即恢复**（日榜 13 + 周榜 13 → 20 候选）。结论：trending 超时/IncompleteRead 先重跑一次，再判定页面结构变更。
 - 对比 10-09 榜单，**新面孔 6 个**：tester-army/e2e、hugohe3/ppt-master、multica-ai/andrej-karpathy-skills、mksglu/context-mode、huggingface/transformers、pytorch/pytorch（落榜 6 个：Agent-Reach、agent-skills、open-code-review、lingbot-map、litellm、SwiftUI-Agent-Skill）。
