@@ -1,5 +1,20 @@
 # 自动化执行记录：GitHub 热点项目日报
 
+## 2026-10-12 20:00（含收录的正式轮）
+- trending 日榜 9 条 + 周榜 11 条 → **19 候选**（trending 正常返回，未触发搜索 API 兜底）。
+- 对比 10-11 榜单，**新面孔 5 个**：Alishahryar1/free-claude-code、mksglu/context-mode、microsoft/BitNet、open-webui/open-webui、DuarteSantos8/openGym
+  （落榜 5 个：Apollo-11、pytorch、asd-ste100-skill、raddebugger、billion-context）。
+- 19 条全部补中文简介 + 商业价值，无「未写商业价值」告警；分类覆盖：free-claude-code→效率工具、openGym→效率工具（自动判"运维部署"有误）、context-mode→开发者工具（自动判"运维部署"有误）。
+- ★ **新面孔 ≠ 全部入库**：5 个新面孔里 openGym、context-mode **早前已被收录**（库里已有），按 `(url||name).toLowerCase()` 去重口径跳过 ⇒ 本轮实际新增 **3 行**。
+  云表 58 → **61 行**，今日(10-12) 3 行。验证：61 = 58 + 3 ✓。
+  ⇒ **以后对账口径修正**：核验等式应为「总行数 = 上一轮总行数 + 实际 INSERT 行数」，不是 "+ 新面孔数"；两者不等时先查是否被历史收录过。
+- 门禁 verify.py：通过 59 项 / 0 失败（退出码 0）。
+- GitHub 推送成功，**远端 commit sha：932434f**（API 通道；本地 f58ba40）。
+- 部署：**本轮第 1 次即成功**（未出现 fetch failed）。
+- 线上 4 项验收全绿：index.html sha256 一致 `35379c54…` / hot-projects.json content-type `application/json` / JSON 内容一致 19 条且顺序相同 / `/api/futures?category=futures` 200。
+- 线上链接：https://data-dashboard-85191.app.workbuddy.host/
+- 注：云表 61 行，远低于前端 1000 行读取上限，暂无需加筛选。
+
 ## 2026-10-12（非取数轮：修「收录日期停在 10-04」+ 任务改成含收录）
 - ⚠️ **发现并修掉一条长期断链**：10-04 改版后「收录进云表」只写在文档里、没进自动任务
   ⇒ 热点榜天天更新，`public.projects` 却冻结在 22 行（10-04 起），代哥来问「收录日期怎么只到十月四号」。
