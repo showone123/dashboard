@@ -1,5 +1,20 @@
 # 自动化执行记录：GitHub 热点项目日报
 
+## 2026-10-13 20:30（含收录的正式轮）
+- ⚠️ 第 1 次 trending 日榜 **WinError 10060 超时**（周榜 10 条）；**重跑第 2 次即正常** ⇒ 再次印证「trending 超时先重跑一次」这条，别急着判定页面结构变更。
+- 第 2 次：trending 日榜 9 条 + 周榜 10 条 → **18 候选**（未触发搜索 API 兜底）。
+- 对比 10-12 榜单，**新面孔 4 个**：debpalash/VoiceStudio、xtool-org/xtool、vercel-labs/skills、EpicGames/raddebugger
+  （落榜 5 个：DuarteSantos8/openGym、Alishahryar1/free-claude-code、mvschwarz/openrig、microsoft/BitNet、open-webui/open-webui）。
+- 18 条全部补中文简介 + 商业价值，无「未写商业价值」告警。分类覆盖 11 条（rea/mattpocock-skills/context-mode/tester-army-e2e/xtool/vercel-labs-skills/cursor-plugins → 开发者工具；design-diagram/hyperframes → 效率工具；gods-eye-view → 数据分析；AnyPS5 → 其他；flutter → 前端 UI）。
+- ★ **新面孔 4 个 ≠ 入库 4 行**：VoiceStudio、raddebugger **早前已收录**（库中已有），按 `(url||name).toLowerCase()` 去重跳过 ⇒ 实际新增 **2 行**（xtool-org/xtool、vercel-labs/skills）。
+  云表 61 → **63 行**，今日(10-13) 2 行。核验等式：63 = 61 + 2 ✓；今日 2 = 实际 INSERT 2 ✓。
+- 门禁 verify.py：通过 59 项 / 0 失败（退出码 0）。
+- GitHub 推送成功，**远端 commit sha：d4092db**（API 通道；本地 a1e6a33）。
+- 部署：**本轮第 1 次即成功**（未出现 fetch failed）。
+- 线上 4 项验收全绿：index.html sha256 一致 `35379c54…` / hot-projects.json content-type `application/json` / JSON 内容一致 18 条且顺序、字段（summary/biz/category）全同 / `/api/futures?category=futures` 200。
+- 线上链接：https://data-dashboard-85191.app.workbuddy.host/
+- 注：云表 63 行，远低于前端 1000 行读取上限，暂无需加筛选。
+
 ## 2026-10-12 20:00（含收录的正式轮）
 - trending 日榜 9 条 + 周榜 11 条 → **19 候选**（trending 正常返回，未触发搜索 API 兜底）。
 - 对比 10-11 榜单，**新面孔 5 个**：Alishahryar1/free-claude-code、mksglu/context-mode、microsoft/BitNet、open-webui/open-webui、DuarteSantos8/openGym
