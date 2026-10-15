@@ -1,5 +1,20 @@
 # 自动化执行记录：GitHub 热点项目日报
 
+## 2026-10-14 20:00（含收录的正式轮）
+- trending **首次即正常**：日榜 12 条 + 周榜 12 条 → **20 候选**（未触发搜索 API 兜底，无超时）。
+- 对比 10-13 榜单，**新面孔 7 个**：ifixai-ai/iFixAi、vxcontrol/pentagi、NationalSecurityAgency/ghidra、rust-lang/rust、K-Dense-AI/scientific-agent-skills、ntdevlabs/tiny11builder、twostraws/SwiftUI-Agent-Skill
+  （落榜 5 个：cursor/plugins、storytold/artcraft、lyogavin/airllm、vercel-labs/skills、bilawalsidhu/gods-eye-view）。
+- 20 条全部补中文简介 + 商业价值，无「未写商业价值」告警；分类覆盖 13 条（rea/ghidra/xtool/context-mode/e2e/iFixAi/rust/SwiftUI-Agent-Skill → 开发者工具；AnyPS5 → 其他；diagram-design/hyperframes → 效率工具；tiny11builder → 运维部署；flutter → 前端 UI）。
+  `_verify/hot_biz.json` 沿用旧 18 条 + 新增 7 条 = 25 条。
+- ★ **新面孔 7 ≠ 入库行数**：twostraws/SwiftUI-Agent-Skill **早前已收录**（10-09 轮），按 `(url||name).toLowerCase()` 去重跳过 ⇒ 实际新增 **6 行**。
+  云表 63 → **69 行**，今日(10-14) 6 行。核验等式：69 = 63 + 6 ✓；今日 6 = 实际 INSERT 6 ✓。
+- 门禁 verify.py：通过 59 项 / 0 失败（退出码 0）。
+- GitHub 推送成功，**远端 commit sha：fa2d26a**（API 通道；本地 70db71a）。
+- 部署：**本轮第 1 次即成功**（未出现 fetch failed）。
+- 线上 4 项验收全绿：index.html sha256 一致 `35379c54…` / hot-projects.json content-type `application/json` / JSON 内容一致 20 条且顺序相同 / `/api/futures?category=futures` 200。
+- 线上链接：https://data-dashboard-85191.app.workbuddy.host/
+- 注：云表 69 行，远低于前端 1000 行读取上限，暂无需加筛选。
+
 ## 2026-10-13 20:30（含收录的正式轮）
 - ⚠️ 第 1 次 trending 日榜 **WinError 10060 超时**（周榜 10 条）；**重跑第 2 次即正常** ⇒ 再次印证「trending 超时先重跑一次」这条，别急着判定页面结构变更。
 - 第 2 次：trending 日榜 9 条 + 周榜 10 条 → **18 候选**（未触发搜索 API 兜底）。
