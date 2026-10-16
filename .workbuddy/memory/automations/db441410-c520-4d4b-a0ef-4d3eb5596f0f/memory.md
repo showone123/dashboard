@@ -1,5 +1,20 @@
 # 自动化执行记录：GitHub 热点项目日报
 
+## 2026-10-15 20:00（含收录的正式轮）
+- trending 正常：日榜 12 条 + 周榜 11 条 → **20 候选**（第 1 次即成功，未触发搜索 API 兜底）。
+- 对比 10-14 榜单，**新面孔 7 个**：affaan-m/ECC、DuarteSantos8/openGym、xerj-org/xerj、obra/superpowers、JuliusBrussee/caveman、anthropics/claude-plugins-official、ruvnet/ruflo
+  （落榜 9 个：ifixai-ai/iFixAi、vxcontrol/pentagi、xtool-org/xtool、tester-army/e2e、thedotmack/claude-mem、rust-lang/rust、flutter/flutter、ntdevlabs/tiny11builder、EpicGames/raddebugger）。
+- 20 条全部补中文简介 + 商业价值，无「未写商业价值」告警；`_verify/hot_biz.json` 本轮合并成完整 37 条。
+  分类覆盖：ghidra 后端服务→开发者工具；K-Dense 数据库→AI/LLM；mattpocock/skills、obra/superpowers、ruvnet/ruflo、affaan-m/ECC、caveman、claude-plugins-official → 开发者工具；context-mode 运维部署→开发者工具；openGym 运维部署→效率工具；xerj → 数据分析。
+- ★ **新面孔 7 ≠ 入库行数**：openGym、superpowers、caveman **早前已收录**，按 `(url||name).toLowerCase()` 去重跳过 ⇒ 实际新增 **4 行**（affaan-m/ECC、xerj-org/xerj、anthropics/claude-plugins-official、ruvnet/ruflo）。
+  云表 69 → **73 行**，今日(10-15) 4 行。核验等式：73 = 69 + 4 ✓；今日 4 = 实际 INSERT 4 ✓。
+- 门禁 verify.py：通过 59 项 / 0 失败（退出码 0）。
+- GitHub 推送成功，**远端 commit sha：9aae616**（API 通道；本地 6934d49）。
+- 部署：**本轮第 1 次即成功**（未出现 fetch failed）。
+- 线上 4 项验收全绿：index.html sha256 一致 `35379c54…` / hot-projects.json content-type `application/json; charset=utf-8` / JSON 20 条且顺序与内容全同 / `/api/futures?category=futures` 200。
+- 线上链接：https://data-dashboard-85191.app.workbuddy.host/
+- 注：云表 73 行，远低于前端 1000 行读取上限，暂无需加筛选。
+
 ## 2026-10-14 20:00（含收录的正式轮）
 - trending **首次即正常**：日榜 12 条 + 周榜 12 条 → **20 候选**（未触发搜索 API 兜底，无超时）。
 - 对比 10-13 榜单，**新面孔 7 个**：ifixai-ai/iFixAi、vxcontrol/pentagi、NationalSecurityAgency/ghidra、rust-lang/rust、K-Dense-AI/scientific-agent-skills、ntdevlabs/tiny11builder、twostraws/SwiftUI-Agent-Skill
