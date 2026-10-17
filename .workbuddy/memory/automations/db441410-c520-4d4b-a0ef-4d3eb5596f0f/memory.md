@@ -1,5 +1,23 @@
 # 自动化执行记录：GitHub 热点项目日报
 
+## 2026-10-16 22:21（含收录的正式轮）
+- ⚠️ 第 1 次 trending **日榜 + 周榜双双 WinError 10060 超时** → 自动退搜索 API 兜底（拿到 20 条但明显是搜索口径，非 trending）；**重跑第 2 次即正常**（日榜 13 + 周榜 11 → 20 候选）。
+  ⇒ 再次确认：trending 超时先重跑一次，且**兜底结果不可直接用**（正式生成必须走 trending，本轮第 2 次草稿 + 正式生成都是 trending 正常返回）。
+- 对比 10-15 榜单，**新面孔 4 个**：storytold/artcraft、MadsLorentzen/ai-job-search、HKUDS/CLI-Anything、hmjz100/LinkSwift
+  （落榜 4 个：DuarteSantos8/openGym、JuliusBrussee/caveman、twostraws/SwiftUI-Agent-Skill、ranxianglei/billion-context）。
+- 20 条全部补中文简介 + 商业价值，无「未写商业价值」告警。`_verify/hot_biz.json` 新增 3 条（ai-job-search / CLI-Anything / LinkSwift），共 36 条。
+  分类覆盖：rea、mattpocock/skills、claude-plugins-official、ECC、superpowers、ghidra、ruflo、context-mode、cursor/plugins、CLI-Anything → 开发者工具；
+  xerj → 数据分析；K-Dense → AI/LLM；diagram-design、hyperframes、ai-job-search、LinkSwift、AnyPS5 → 效率工具；artcraft → 其他。
+  规律：脚本对 agent 类项目常误判为「AI / LLM」或「运维部署」，要靠 --biz 覆盖。
+- ★ **新面孔 4 ≠ 入库行数**：storytold/artcraft **早前已收录**，按 `(url||name).toLowerCase()` 去重跳过 ⇒ 实际新增 **3 行**。
+  云表 73 → **76 行**，今日(10-16) 3 行。核验等式：76 = 73 + 3 ✓；今日 3 = 实际 INSERT 3 ✓。新 id：pf3q8pqvnisgn4bp / po9xkd369ougrwp0 / pe0s9jz2sc2omzo4。
+- 门禁 verify.py：通过 59 项 / 0 失败（退出码 0）。
+- GitHub 推送成功，**远端 commit sha：e3f4776**（API 通道；本地 787ec34）。
+- 部署：**本轮第 1 次即成功**（未出现 fetch failed）。
+- 线上 4 项验收全绿：index.html sha256 一致 `35379c54…` / hot-projects.json content-type `application/json; charset=utf-8` / JSON 20 条且 items 逐字段全同 / `/api/futures?category=futures` 200。
+- 线上链接：https://data-dashboard-85191.app.workbuddy.host/
+- 注：云表 76 行，远低于前端 1000 行读取上限，暂无需加筛选；总行数超 800 时才提示。
+
 ## 2026-10-15 20:00（含收录的正式轮）
 - trending 正常：日榜 12 条 + 周榜 11 条 → **20 候选**（第 1 次即成功，未触发搜索 API 兜底）。
 - 对比 10-14 榜单，**新面孔 7 个**：affaan-m/ECC、DuarteSantos8/openGym、xerj-org/xerj、obra/superpowers、JuliusBrussee/caveman、anthropics/claude-plugins-official、ruvnet/ruflo
